@@ -1,0 +1,15 @@
+# Ambiente de RL
+gymnasium==1.4.0
+
+numpy==2.5.4
+torch==2.14.1
+
+# Análisis y gráficas
+pandas==3.1.0
+matplotlib==3.11.2
+
+# Archivos de configuración de experimentos
+PyYAML==6.0.3
+
+# Tests
+pytest==9.1.1

@@ -1,0 +1,27 @@
+# Entorno virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+results/models/checkpoints/
+results/runs/**/events.out.tfevents.*
+
+# Frontend
+node_modules/
+viewer/dist/
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+.idea/
+
+docs/
+.vscode/
