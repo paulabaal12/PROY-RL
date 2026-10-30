@@ -1,5 +1,7 @@
 # He(RL)l Kitchen
 
+![Replay: heurística EDF vs. FIFO ingenua en la misma cocina](results/figures/demo.gif)
+
 Proyecto Final — Reinforcement Learning, Universidad del Valle de Guatemala (UVG).
 
 Entrenamos agentes de aprendizaje por refuerzo profundo para manejar una cocina simulada, estocástica y **parcialmente observable (POMDP)**, en la que deben completar órdenes antes de su tiempo límite. Como cualquier chef, el agente solo puede hacer **una acción a la vez** y no ve directamente el estado real de cocción: recibe observaciones ruidosas o incompletas y puede gastar una acción en **probar (taste)** la comida para obtener información más precisa.
