@@ -87,7 +87,9 @@ def sample_kitchen(rng: np.random.Generator, horizon: int, spec: str | dict = "r
     }
     # Una posible pico por mitad del episodio, así nunca se traslapan.
     half = horizon // 2
-    starts = [int(rng.integers(j * half, (j + 1) * half - RUSH_LENGTH + 1)) for j in range(2)]
+    # (Con horizontes muy cortos, que solo usan los tests, la pico puede salirse del episodio.)
+    starts = [int(rng.integers(j * half, max(j * half, (j + 1) * half - RUSH_LENGTH) + 1))
+              for j in range(2)]
     single_half = int(rng.integers(2))   # con una sola pico, en qué mitad cae
 
     if spec == "random":

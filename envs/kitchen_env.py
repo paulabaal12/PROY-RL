@@ -13,7 +13,8 @@ import numpy as np
 from gymnasium import spaces
 
 from envs.kitchen_config import (
-    DISH_DUE_RANGE, DISH_PREP, DISH_RATE_RANGE, DISHES, KitchenParams, sample_kitchen,
+    DISH_DUE_RANGE, DISH_PREP, DISH_RATE_RANGE, DISHES, KitchenParams, classify,
+    sample_kitchen,
 )
 
 # --- Acciones (sección 3.4) -------------------------------------------------
@@ -202,6 +203,7 @@ class KitchenEnv(gym.Env):
         assert self.action_space.contains(action), f"Acción inválida: {action}"
         reward = 0.0
         events: list[dict] = []
+        taste_station = None
 
         # 1. Acción del agente
         kind, idx = self.layout.decode(action)
@@ -223,6 +225,25 @@ class KitchenEnv(gym.Env):
             self.queue.remove(order)
             self.stations[k] = Station(order=order)
             events.append({"type": "placed", "slot": idx, "station": k, "order": order.to_dict()})
+        elif kind in OP_NAMES and idx < self.params.n_stations and self.stations[idx].occupied:
+            station = self.stations[idx]
+            if kind == "taste":
+                # La lectura se toma después de cocinar este paso (paso 2b)
+                taste_station = idx
+                reward -= self.taste_cost
+            elif kind == "serve":
+                # Se evalúa con el c de ANTES de cocinar este paso
+                reward += self._serve(idx, events)
+            else:
+                # La orden vuelve a la cola en su lugar por orden de llegada, con la
+                # preparación por rehacer y su misma hora de entrega (sección 3.4)
+                order = station.order
+                events.append({"type": "discarded", "station": idx, "cook": station.cook,
+                               "order": order.to_dict()})
+                order.prep_done = 0
+                self.queue.append(order)
+                self.queue.sort(key=lambda o: o.order_id)
+                self.stations[idx] = Station()
         else:
             valid = False
         if not valid:
@@ -239,9 +260,30 @@ class KitchenEnv(gym.Env):
                 st.cook_steps += 1
                 st.steps_since_taste += 1
 
-        # 3. Tiempo: todas las órdenes envejecen un paso
+        # 2b. Resultado de probar, con el nivel ya actualizado. El ruido se saca
+        #     siempre, se use o no.
+        taste_noise = float(self.rng_obs.normal(0.0, self.sigma_taste))
+        if taste_station is not None:
+            st = self.stations[taste_station]
+            st.last_taste = st.cook + taste_noise
+            st.has_tasted = True
+            st.steps_since_taste = 0
+            events.append({"type": "tasted", "station": taste_station,
+                           "result": st.last_taste, "cook": st.cook})
+
+        # 3. Tiempo: todas las órdenes envejecen un paso. Las que pasan su hora de
+        #    entrega más la paciencia expiran: el cliente se fue (sección 3.3).
         for order in self._active_orders():
             order.age += 1
+        expired = [o for o in self.queue if self._is_expired(o)]
+        self.queue = [o for o in self.queue if not self._is_expired(o)]
+        for k, st in enumerate(self.stations):
+            if st.occupied and self._is_expired(st.order):
+                expired.append(st.order)
+                self.stations[k] = Station()
+        for order in expired:
+            reward -= self.expire_penalty
+            events.append({"type": "expired", "order": order.to_dict()})
 
         # 4. Llegadas. Los números aleatorios se sacan SIEMPRE, aunque la cola
         #    esté llena, para que la secuencia de rng_orders no dependa del agente.
@@ -271,6 +313,28 @@ class KitchenEnv(gym.Env):
         order = Order(order_id=self.next_order_id, dish=dish, due=due, rate=rate)
         self.next_order_id += 1
         return order
+
+    def _serve(self, k: int, events: list[dict]) -> float:
+        """Entrega el plato de la estación k y devuelve su recompensa (sección 3.5)."""
+        station = self.stations[k]
+        order = station.order
+        quality = classify(station.cook)
+        delay = max(order.age - order.due, 0)
+        if quality != "ok":
+            reward, kind = -self.bad_serve_penalty, f"served_{quality}"
+        elif delay == 0:
+            reward, kind = self.serve_reward, "served_ok"
+        else:
+            # Cae a late_frac apenas pasa la hora de entrega y baja en línea recta
+            reward = self.serve_reward * self.late_frac * (1 - (delay - 1) / self.patience)
+            kind = "served_late"
+        events.append({"type": kind, "station": k, "cook": station.cook, "delay": delay,
+                       "order": order.to_dict()})
+        self.stations[k] = Station()
+        return reward
+
+    def _is_expired(self, order: Order) -> bool:
+        return order.age > order.due + self.patience
 
     def _free_station(self) -> int | None:
         """Estación disponible libre de menor índice, o None."""

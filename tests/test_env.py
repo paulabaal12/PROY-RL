@@ -7,12 +7,13 @@ los eventos sean los que dice la especificación.
 
 import gymnasium as gym
 import numpy as np
+import pytest
 from gymnasium.utils.env_checker import check_env
 
 import envs  # noqa: F401  (registra HellKitchen-v1)
 from agents.baselines import RandomPolicy
 from envs.kitchen_env import (
-    SL_PRESENT, SLOT_FEATURES, ST_AVAILABLE, STATION_FEATURES, KitchenEnv, Order, Station,
+    OP_DISCARD, OP_SERVE, OP_TASTE, SL_PRESENT, SLOT_FEATURES, ST_AVAILABLE, STATION_FEATURES, KitchenEnv, Order, Station,
 )
 
 # Cocina "medium" sin llegadas ni horas pico: el estado solo cambia por lo que hace el test.
@@ -223,3 +224,153 @@ def test_kitchen_is_drawn_per_episode():
     first = env.params
     env.reset(seed=3)
     assert env.params == first
+
+
+# --- Cocción, probar, servir y descartar (Task 3) ---------------------------
+
+def taste(env, k):
+    return env.layout.station(k, OP_TASTE)
+
+
+def serve(env, k):
+    return env.layout.station(k, OP_SERVE)
+
+
+def discard(env, k):
+    return env.layout.station(k, OP_DISCARD)
+
+
+def test_cooking_advances_every_step():
+    env = make_env(sigma_proc=0.0)
+    put_dish(env, 0, cook=0.0, rate=0.1)
+    for _ in range(3):
+        env.step(env.layout.WAIT)
+    assert abs(env.stations[0].cook - 0.3) < 1e-9
+    assert env.stations[0].cook_steps == 3
+
+
+def test_taste_costs_and_is_precise():
+    env = make_env()
+    env.queue = []
+    for _ in range(50):
+        put_dish(env, 0, cook=0.8, rate=0.0)
+        _, reward, _, _, info = env.step(taste(env, 0))
+        assert abs(reward - (-0.2)) < 1e-9
+        assert "tasted" in event_types(info)
+        st = env.stations[0]
+        assert st.has_tasted and st.steps_since_taste == 0
+        assert abs(st.last_taste - st.cook) < 0.1
+
+
+def test_serve_on_time_gives_flat_reward():
+    env = make_env()
+    put_dish(env, 0, cook=1.1, age=30, due=30)
+    _, reward, _, _, info = env.step(serve(env, 0))
+    assert reward == 10.0
+    assert "served_ok" in event_types(info)
+    assert not env.stations[0].occupied
+
+
+@pytest.mark.parametrize("delay, expected", [(1, 2.5), (5, 1.5), (10, 0.25)])
+def test_late_reward_boundaries(delay, expected):
+    env = make_env()
+    put_dish(env, 0, cook=1.1, age=30 + delay, due=30)
+    _, reward, _, _, info = env.step(serve(env, 0))
+    assert abs(reward - expected) < 1e-9
+    served = [e for e in info["events"] if e["type"] == "served_late"]
+    assert served and served[0]["delay"] == delay
+
+
+def test_order_expires_after_patience():
+    env = make_env()
+    env.queue = []
+    put_order(env, age=40, due=30)                  # d = P = 10: último paso con paciencia
+    _, reward, _, _, info = env.step(env.layout.WAIT)
+    assert reward == -8.0
+    assert "expired" in event_types(info)
+    assert env.queue == []
+
+
+def test_expire_while_cooking_frees_station():
+    env = make_env()
+    env.queue = []
+    put_dish(env, 0, cook=0.5, age=40, due=30)
+    _, reward, _, _, info = env.step(env.layout.WAIT)
+    assert reward == -8.0
+    assert not env.stations[0].occupied
+    _, reward, _, _, info = env.step(serve(env, 0))
+    assert event_types(info) == ["invalid"]
+
+
+@pytest.mark.parametrize("cook, quality", [(0.5, "raw"), (1.4, "burnt")])
+def test_serve_bad_food(cook, quality):
+    env = make_env()
+    put_dish(env, 0, cook=cook)
+    _, reward, _, _, info = env.step(serve(env, 0))
+    assert reward == -10.0
+    assert f"served_{quality}" in event_types(info)
+
+
+def test_serve_uses_cook_before_this_step():
+    env = make_env()
+    put_dish(env, 0, cook=1.29, rate=0.1)
+    _, _, _, _, info = env.step(serve(env, 0))
+    assert "served_ok" in event_types(info)
+
+
+def test_discard_returns_order_needing_prep_again():
+    env = make_env()
+    env.queue = []
+    order = put_dish(env, 0, cook=1.5, dish=1, rate=0.11, age=12, due=25)
+    order.prep_done = 4
+    later = put_order(env)                          # llegó después: va detrás
+    env.step(discard(env, 0))
+    assert env.queue[0] is order and env.queue[1] is later
+    assert order.prep_done == 0
+    assert order.due == 25 and order.rate == 0.11
+    assert order.age == 13                          # envejeció el paso del discard
+    assert not env.stations[0].occupied
+
+
+def test_discard_with_full_queue():
+    env = make_env()
+    env.queue = []
+    put_dish(env, 0, cook=1.5)
+    for _ in range(env.queue_max):
+        put_order(env)
+    obs, *_ = env.step(discard(env, 0))
+    assert len(env.queue) == env.queue_max + 1
+    assert env.observation_space.contains(obs)
+
+
+def test_actions_on_missing_stations_are_invalid():
+    env = make_env(kitchen={"n_stations": 2, "arrival_prob": 0.0, "n_rushes": 0})
+    for op in (OP_TASTE, OP_SERVE, OP_DISCARD):
+        obs, reward, _, _, info = env.step(env.layout.station(2, op))
+        assert reward == -0.1
+        assert event_types(info) == ["invalid"]
+    assert obs[2 * STATION_FEATURES + ST_AVAILABLE] == 0.0
+
+
+def test_truncates_at_horizon_and_never_terminates():
+    env = make_env(horizon=30)
+    for t in range(30):
+        _, _, terminated, truncated, _ = env.step(env.layout.WAIT)
+        assert not terminated
+        assert truncated == (t == 29)
+
+
+def test_rush_raises_arrivals():
+    env = KitchenEnv(kitchen={"arrival_prob": 0.1, "n_rushes": 2}, queue_max=1000)
+    inside = outside = steps_in = steps_out = 0
+    for seed in range(100):
+        env.reset(seed=seed)
+        rushes = env.params.rushes
+        for t in range(env.horizon):
+            _, _, _, _, info = env.step(env.layout.WAIT)
+            arrived = sum(e["type"] == "arrived" for e in info["events"])
+            if any(s <= t < e for s, e in rushes):
+                inside, steps_in = inside + arrived, steps_in + 1
+            else:
+                outside, steps_out = outside + arrived, steps_out + 1
+    assert inside / steps_in > 2 * outside / steps_out
