@@ -18,3 +18,9 @@ pytest==9.1.1
 nbformat==5.10.4
 nbconvert==7.16.6
 ipykernel==6.29.5
+
+# Visualizador de replays (viz/)
+pygame-ce==2.5.8
+imageio==2.38.1
+imageio-ffmpeg==0.7.0
+Pillow==13.0.0
