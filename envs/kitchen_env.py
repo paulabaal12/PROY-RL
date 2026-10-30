@@ -393,4 +393,52 @@ class KitchenEnv(gym.Env):
 
     def _get_info(self) -> dict:
         """Estado oculto real y eventos del paso. El agente NO debe usarlo para decidir."""
-        return {"t": self.t, "events": self.last_events}
+        return {
+            "t": self.t,
+            "kitchen": self.params.to_dict(),
+            "true_cook": [st.cook if st.occupied else None for st in self.stations],
+            "true_rate": [st.order.rate if st.occupied else None for st in self.stations],
+            "stations": [st.order.to_dict() if st.occupied else None for st in self.stations],
+            "queue": [o.to_dict() for o in self.queue],
+            "events": self.last_events,
+        }
+
+    # ----------------------------------------------------------------- render
+    def render(self):
+        if self.render_mode is None:
+            return None
+        rush = " | HORA PICO" if any(s <= self.t < e for s, e in self.params.rushes) else ""
+        lines = [f"=== t = {self.t:3d}/{self.horizon}{rush} " + "=" * 40]
+        if self.last_action is not None:
+            kind, idx = self.layout.decode(self.last_action)
+            target = "" if idx is None else (f" lugar {idx}" if kind in ("prep", "place")
+                                             else f" estación {idx}")
+            lines.append(f"Acción: {kind}{target}")
+        for k, st in enumerate(self.stations):
+            if k >= self.params.n_stations:
+                lines.append(f"[Estación {k}] no existe en esta cocina")
+                continue
+            if not st.occupied:
+                lines.append(f"[Estación {k}] vacía")
+                continue
+            # Barra del nivel REAL: '.' crudo, '#' bien cocido, '!' quemado.
+            filled = int(min(st.cook, 1.6) / 1.6 * 32)
+            bar = "".join("." if i < 20 else ("#" if i < 26 else "!") for i in range(filled))
+            taste = f"{st.last_taste:.2f} (hace {st.steps_since_taste})" if st.has_tasted else "-"
+            o = st.order
+            lines.append(
+                f"[Estación {k}] {DISHES[o.dish]:<7} orden#{o.order_id} edad {o.age:2d}/entrega {o.due} "
+                f"| real c={st.cook:.2f} ({classify(st.cook)}) r={o.rate:.3f} "
+                f"| agente ve ~{self.last_visual[k]:.2f} | última prueba: {taste}"
+            )
+            lines.append(f"             |{bar:<32}|  (crudo < 1.0 <= ok < 1.3 <= quemado)")
+        window = ", ".join(
+            f"{DISHES[o.dish]}#{o.order_id}(prep {o.prep_done}/{o.prep_required}, "
+            f"edad {o.age}/{o.due})" for o in self.queue[: self.window]) or "vacía"
+        lines.append(f"Ventana (N={self.window}): {window}")
+        backlog = len(self.queue) - self.window
+        if backlog > 0:
+            lines.append(f"Fuera de la ventana: {backlog} órdenes")
+        if self.last_events:
+            lines.append("Eventos: " + "; ".join(e["type"] for e in self.last_events))
+        return "\n".join(lines)

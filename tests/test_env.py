@@ -374,3 +374,26 @@ def test_rush_raises_arrivals():
             else:
                 outside, steps_out = outside + arrived, steps_out + 1
     assert inside / steps_in > 2 * outside / steps_out
+
+
+# --- info y render (Task 4) -------------------------------------------------
+
+def test_info_exposes_hidden_state():
+    env = make_env()
+    put_dish(env, 0, cook=0.7, rate=0.05)
+    _, _, _, _, info = env.step(env.layout.WAIT)
+    assert info["true_cook"][0] == env.stations[0].cook
+    assert info["true_rate"][0] == 0.05
+    assert info["true_cook"][2] is None and len(info["true_cook"]) == env.max_stations
+    assert info["kitchen"]["n_stations"] == env.params.n_stations
+    assert info["stations"][0]["id"] == env.stations[0].order.order_id
+    assert [o["id"] for o in info["queue"]] == [o.order_id for o in env.queue]
+
+
+def test_ansi_render_returns_text():
+    env = make_env(render_mode="ansi")
+    put_dish(env, 0, cook=0.7)
+    env.step(env.layout.WAIT)
+    text = env.render()
+    assert isinstance(text, str)
+    assert "Estación 0" in text and "Ventana" in text and "no existe" in text
