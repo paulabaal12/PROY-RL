@@ -153,3 +153,13 @@ def test_samples_build_full_timelines():
     for path in sorted(Path("results/replays").glob("sample_*.jsonl")):
         snaps, scripts = build_timeline(load_replay(path))
         assert len(snaps) == len(scripts) == 201
+
+
+def test_serve_reward_excludes_same_step_expiry_penalty():
+    def setup(env):
+        put_dish(env, 0, cook=1.1, age=35, due=30)
+        put_dish(env, 1, cook=0.5, age=40, due=30)
+
+    _, (_, scripts) = scripted(setup, [L.station(0, OP_SERVE)])
+    assert scripts[1].reward < 0                       # la recompensa del paso incluye el -8
+    assert abs(scripts[1].serve_reward - 1.5) < 1e-9   # 2.5 · (1 − (5 − 1)/10): solo la entrega

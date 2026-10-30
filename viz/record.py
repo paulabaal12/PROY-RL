@@ -46,7 +46,7 @@ def record_episode(env: KitchenEnv, policy: Callable[[np.ndarray], int], seed: i
         "kind": "header", "seed": seed, "kitchen": env.kitchen, "window": env.window,
         "max_stations": env.max_stations, "policy": type(policy).__name__,
         "env_params": {"horizon": env.horizon, "patience": env.patience,
-                       "queue_max": env.queue_max},
+                       "queue_max": env.queue_max, "expire_penalty": env.expire_penalty},
         **(meta or {}),
     }
     obs, info = env.reset(seed=seed)

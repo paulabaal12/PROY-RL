@@ -60,6 +60,7 @@ class StepScript:
     expired: list[int]
     expired_burners: list[int]
     arrived: list[int]
+    serve_reward: float | None = None   # solo la entrega, sin las expiraciones del mismo paso
 
 
 def _burner(k: int) -> str:
@@ -93,7 +94,7 @@ def _snapshot(step: Step, window: int, score: float, chef_at: str,
     return Snapshot(step.t, orders, burners, score, chef_at)
 
 
-def _script(step: Step, prev: Snapshot) -> StepScript:
+def _script(step: Step, prev: Snapshot, expire_penalty: float) -> StepScript:
     events = step.info["events"]
     by_type = {}
     for e in events:
@@ -138,11 +139,13 @@ def _script(step: Step, prev: Snapshot) -> StepScript:
         expired=expired,
         expired_burners=[k for k, b in enumerate(prev.burners) if b.order_id in expired],
         arrived=[e["order"]["id"] for e in events if e["type"] == "arrived"],
+        serve_reward=step.reward + expire_penalty * len(expired) if anim.startswith("serve") else None,
     )
 
 
 def build_timeline(replay: Replay) -> tuple[list[Snapshot], list[StepScript]]:
     window = replay.window
+    expire_penalty = replay.header["env_params"].get("expire_penalty", 8.0)
     revealed = [False] * len(replay.steps[0].info["stations"])
     snapshots = [_snapshot(replay.steps[0], window, 0.0, "center", revealed)]
     scripts = [StepScript(0, ["center"], None, None, "idle", None, None, None, None, 0.0,
@@ -150,7 +153,7 @@ def build_timeline(replay: Replay) -> tuple[list[Snapshot], list[StepScript]]:
     score = 0.0
     for step in replay.steps[1:]:
         prev = snapshots[-1]
-        script = _script(step, prev)
+        script = _script(step, prev, expire_penalty)
         score += step.reward
         # La tapa se abre si la prueba dice "quemado" y se cierra cuando la estación cambia de orden
         for k, o in enumerate(step.info["stations"]):

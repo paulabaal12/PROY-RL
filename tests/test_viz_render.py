@@ -47,3 +47,24 @@ def test_order_column_overflow_collapses():
     shown, hidden = order_column_layout(13, 240)
     assert shown + hidden == 13 and hidden > 0
     assert order_column_layout(3, 240) == (3, 0)
+
+
+def test_particles_seed_is_stable_across_processes():
+    import subprocess
+    import sys
+    code = ("from viz.scene import particle_seed; "
+            "from viz.timeline import StepScript; "
+            "print(particle_seed(StepScript(5, ['serve'], None, None, 'serve_ok', 0, 'egg', 1, None, "
+            "10.0, [], [], [], 10.0)))")
+    out = {subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                          env={**os.environ, "PYTHONHASHSEED": str(h)}).stdout for h in (1, 2)}
+    assert len(out) == 1 and out.pop().strip().isdigit()
+
+
+def test_focused_order_is_always_visible():
+    from viz.hud import visible_orders
+    ids = list(range(13))
+    shown, chip = visible_orders(ids, focus=12, height=240)
+    assert 12 in shown and len(shown) + chip == 13
+    shown, chip = visible_orders(ids, focus=2, height=240)
+    assert shown == [0, 1, 2, 3, 4]

@@ -11,6 +11,7 @@ Vista previa:
 
 import argparse
 import math
+import zlib
 
 import pygame
 
@@ -187,7 +188,7 @@ def _draw_chef_and_action(surf, iso, script, ph, chef_pos, picked_up, shirt, bur
                           window_top, board_top, trash_top, t_anim):
     k = iso.k
     anim, a = script.anim, ph.action
-    seed = hash((script.t, script.burner or 0, anim))
+    seed = particle_seed(script)
     lean, wiggle, face, hop = 0.0, 0.0, "normal", 0.0
     head = (chef_pos[0], chef_pos[1] - 80 * k)
 
@@ -261,6 +262,11 @@ def _draw_chef_and_action(surf, iso, script, ph, chef_pos, picked_up, shirt, bur
         sprites.draw_icon(surf, "question", head, 20 * k, int(255 * min(1, a * 4)))
 
 
+def particle_seed(script: StepScript) -> int:
+    """Semilla estable entre procesos (hash() de un str cambia en cada ejecución)."""
+    return zlib.crc32(f"{script.t}|{script.burner}|{script.anim}".encode())
+
+
 def _icon_stream(surf, name, origin, seed, u, k, n=3):
     for x, y, al in sprites.particles(seed, n, u, origin, 18 * k, 30 * k):
         if al > 0:
@@ -280,14 +286,14 @@ def _serve_effects(surf, script, ph, window_top, seed, k):
                 sprites.draw_icon(surf, "coin", (x, y), 11 * k, al)
         if anim == "serve_late":
             _icon_stream(surf, "angry", (origin[0] + 6 * k, origin[1] - 10 * k), seed + 3, u, k, n=2)
-        label, color = f"+{script.reward:g}", PALETTE["money_green"]
+        label, color = f"{script.serve_reward:+g}", PALETTE["money_green"]
     else:
         for x, y, al in sprites.particles(seed, 4, u, origin, 20 * k, 40 * k):
             if al > 0:
                 sprites.draw_icon(surf, "minus_money", (x, y), 13 * k, al)
         _icon_stream(surf, "angry", origin, seed + 5, u, k, n=2)
         _icon_stream(surf, "puke", origin, seed + 6, u, k, n=2)
-        label, color = f"{script.reward:g}", PALETTE["money_red"]
+        label, color = f"{script.serve_reward:+g}", PALETTE["money_red"]
     sprites.text(surf, label, (origin[0], origin[1] - 40 * k - 14 * k * u), int(15 * k), color,
                  outline=(255, 255, 255), alpha=int(255 * min(1, (1 - u) * 3)))
 

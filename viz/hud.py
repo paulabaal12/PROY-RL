@@ -22,6 +22,16 @@ def order_column_layout(n_orders: int, height: float) -> tuple[int, int]:
     return fit - 1, n_orders - fit + 1
 
 
+def visible_orders(ids: list[int], focus: int | None, height: float) -> tuple[list[int], int]:
+    """Órdenes con tarjeta (en orden) y cuántas van al chip. La orden en la que
+    trabaja el chef siempre se muestra: si no cabe, toma el último lugar."""
+    shown, hidden = order_column_layout(len(ids), height)
+    out = ids[:shown]
+    if focus in ids and focus not in out and out:
+        out[-1] = focus
+    return out, hidden
+
+
 def _shadow_box(surf, rect, k, fill=None, radius=10, border=None, border_w=1.5):
     shadow = rect.move(0, round(2 * k))
     pygame.draw.rect(surf, (0, 0, 0, 30) if surf.get_flags() & pygame.SRCALPHA else (226, 210, 190),
@@ -140,9 +150,12 @@ def draw_hud(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Snaps
 
 def _draw_orders(surf, k, D, prev, cur, script, s, shirt, patience):
     pitch = CARD_H + CARD_GAP
-    shown, hidden = order_column_layout(len(cur.orders if s > 0 else prev.orders), COLUMN_BOTTOM - COLUMN_TOP)
-    prev_idx = {o.id: i for i, o in enumerate(prev.orders)}
-    cur_idx = {o.id: i for i, o in enumerate(cur.orders)}
+    height = COLUMN_BOTTOM - COLUMN_TOP
+    prev_ids, _ = visible_orders([o.id for o in prev.orders], script.focus_order, height)
+    cur_ids, _ = visible_orders([o.id for o in cur.orders], script.focus_order, height)
+    shown, hidden = order_column_layout(len(cur.orders if s > 0 else prev.orders), height)
+    prev_idx = {oid: i for i, oid in enumerate(prev_ids)}
+    cur_idx = {oid: i for i, oid in enumerate(cur_ids)}
     views = {o.id: o for o in prev.orders}
     if s > 0:
         views.update({o.id: o for o in cur.orders})
