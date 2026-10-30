@@ -61,3 +61,11 @@ def test_every_sprite_draws_without_error():
         surf.fill(PALETTE["bg"])
         draw(surf)
         assert changed(surf)
+
+
+def test_fonts_survive_pygame_restart():
+    pygame.init()
+    sprites.font(12).render("a", True, (0, 0, 0))
+    pygame.quit()
+    pygame.init()
+    sprites.font(12).render("a", True, (0, 0, 0))

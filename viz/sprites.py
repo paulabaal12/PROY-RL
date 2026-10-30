@@ -32,7 +32,11 @@ def font(size: int) -> pygame.font.Font:
     if size not in _fonts:
         if not pygame.font.get_init():
             pygame.font.init()
-        _fonts[size] = pygame.font.SysFont("nunito,quicksand,segoeuisemibold,segoeui,arial",
+        if not _fonts:
+            # Las fuentes dejan de servir después de pygame.quit(), que además olvida
+            # los ganchos registrados: se registra de nuevo cada vez que se llena el caché
+            pygame.register_quit(_fonts.clear)
+        _fonts[size] =pygame.font.SysFont("nunito,quicksand,segoeuisemibold,segoeui,arial",
                                            size, bold=True)
     return _fonts[size]
 

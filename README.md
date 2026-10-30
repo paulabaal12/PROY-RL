@@ -182,6 +182,23 @@ Escribe `results/tables/baselines_summary.{csv,md}` y `baselines_episodes.csv`. 
 | Aleatoria | −88.7 ± 14.7 | 2.0 % | 97.0 % | 1.14 | 5.2 |
 | Heurística | 142.3 ± 31.4 | 78.5 % | 0.8 % | 2.38 | 3.8 |
 
+### 5. Visualizador de replays
+
+Cocina isométrica en pygame que reproduce episodios grabados, con pantalla dividida para comparar agentes (hasta 4).
+
+```powershell
+# Grabar un replay (random, fifo o edf); para agentes entrenados, usar viz.record.record_episode
+python -m viz.record --policy fifo --seed 10000 --kitchen easy --window 4 --out results/replays/fifo.jsonl
+
+# Reproducir (rate = pasos por segundo)
+python play_sim.py --rate 2 --agent results/replays/sample_edf.jsonl "EDF heuristic" --agent results/replays/sample_fifo.jsonl "Naive FIFO Baseline"
+
+# Exportar un clip sin abrir ventana
+python play_sim.py --rate 4 --from 20 --to 60 --agent results/replays/sample_fifo.jsonl "Naive FIFO Baseline" --export results/figures/demo.gif
+```
+
+Controles: Espacio pausa, `+`/`-` velocidad, flechas paso a paso (en pausa), `R` reinicia, `Esc` sale. `python -m viz.make_samples` regenera los replays de ejemplo de `results/replays/`. Diseño: `docs/superpowers/specs/2026-10-30-kitchen-replay-viewer-design.md`.
+
 ### Pendientes
 
 5. **Entrenar DQN / PPO** — *(T4/T5)*

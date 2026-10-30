@@ -189,7 +189,7 @@ def _draw_chef_and_action(surf, iso, script, ph, chef_pos, picked_up, shirt, bur
     anim, a = script.anim, ph.action
     seed = hash((script.t, script.burner or 0, anim))
     lean, wiggle, face, hop = 0.0, 0.0, "normal", 0.0
-    head = (chef_pos[0], chef_pos[1] - 70 * k)
+    head = (chef_pos[0], chef_pos[1] - 80 * k)
 
     if ph.travel < 1 and len(script.path) > 1:
         hop = 2.5 * abs(math.sin(ph.travel * math.pi * 6))
