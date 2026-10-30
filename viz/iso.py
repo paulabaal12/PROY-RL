@@ -14,15 +14,24 @@ STATION_TILES = {
 }
 # Punto del piso donde se para el chef para usar cada estación
 STAND_TILES = {
-    "prep": (1.5, 1.35),
-    "burner0": (2.5, 1.35),
-    "burner1": (3.5, 1.35),
-    "burner2": (4.5, 1.35),
-    "trash": (1.35, 2.5),
-    "serve": (1.35, 4.5),
+    "prep": (1.5, 1.6),
+    "burner0": (2.5, 1.6),
+    "burner1": (3.5, 1.6),
+    "burner2": (4.5, 1.6),
+    "trash": (1.6, 2.5),
+    "serve": (1.6, 4.4),
     "center": (2.6, 2.7),
 }
 COUNTER_HEIGHT = 18
+# Origen de la cocina en el lienzo del mockup (470 x 320), a la derecha de la columna de órdenes
+KITCHEN_ORIGIN = (300, 96)
+TILE = (60, 30)
+
+
+def design_frame(rect, design=(470, 320)) -> tuple[float, float, float]:
+    """Escala k y esquina (x0, y0) para dibujar el lienzo del mockup centrado en `rect`."""
+    k = min(rect.width / design[0], rect.height / design[1])
+    return k, rect.x + (rect.width - design[0] * k) / 2, rect.y + (rect.height - design[1] * k) / 2
 
 
 class Iso:
