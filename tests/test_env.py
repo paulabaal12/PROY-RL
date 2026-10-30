@@ -397,3 +397,19 @@ def test_ansi_render_returns_text():
     text = env.render()
     assert isinstance(text, str)
     assert "Estación 0" in text and "Ventana" in text and "no existe" in text
+
+
+# --- Hallazgos de la revisión final -----------------------------------------
+
+def test_kitchen_with_more_stations_than_max_is_rejected():
+    env = KitchenEnv(max_stations=2, kitchen="easy")          # easy tiene K = 3
+    with pytest.raises(ValueError, match="max_stations"):
+        env.reset(seed=0)
+
+
+def test_time_to_due_stays_in_bounds_with_long_due_times():
+    env = make_env()
+    env.queue = []
+    put_order(env, due=80)                                    # más que TIME_NORM = 50
+    put_dish(env, 0, cook=0.2, due=80)
+    assert env.observation_space.contains(env._get_obs())

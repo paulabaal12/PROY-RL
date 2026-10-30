@@ -184,6 +184,9 @@ class KitchenEnv(gym.Env):
         self.rng_obs = np.random.default_rng(child_seeds[3])
 
         self.params: KitchenParams = sample_kitchen(self.rng_kitchen, self.horizon, self.kitchen)
+        if self.params.n_stations > self.max_stations:
+            raise ValueError(f"La cocina tiene {self.params.n_stations} estaciones, más que "
+                             f"max_stations = {self.max_stations}")
         self.t = 0
         self.next_order_id = 0
         self.stations = [Station() for _ in range(self.max_stations)]
@@ -348,7 +351,8 @@ class KitchenEnv(gym.Env):
 
     def _time_features(self, order: Order) -> tuple[float, float]:
         """(time_to_due, patience_left) normalizados (sección 3.6)."""
-        time_to_due = max((order.due - order.age) / TIME_NORM, -self.patience / TIME_NORM)
+        # Se recorta a 1 por si el Paso 0 sube las horas de entrega por encima de TIME_NORM
+        time_to_due = min(max((order.due - order.age) / TIME_NORM, -self.patience / TIME_NORM), 1.0)
         if order.age <= order.due:
             patience_left = 1.0
         else:
