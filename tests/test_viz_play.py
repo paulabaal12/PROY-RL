@@ -25,7 +25,9 @@ def test_pane_rects_layouts():
     assert [r.width for r in two] == [640, 640] and two[1].x == 640
     four = pane_rects(4, (1280, 720))
     assert {(r.x, r.y) for r in four} == {(0, 0), (640, 0), (0, 360), (640, 360)}
-    assert len(pane_rects(3, (1280, 720))) == 3
+    three = pane_rects(3, (1280, 720))
+    assert all(r.y == 0 and r.height == 720 for r in three)      # una fila, sin celda vacía
+    assert sum(r.width for r in three) == 1280
     with pytest.raises(ValueError):
         pane_rects(5, (1280, 720))
 

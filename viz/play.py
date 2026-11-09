@@ -28,16 +28,14 @@ MIN_RATE, MAX_RATE, RATE_STEP = 0.25, 20.0, 1.5
 
 
 def pane_rects(n: int, size: tuple[int, int]) -> list[pygame.Rect]:
-    """1 panel = ventana completa; 2 = lado a lado; 3 o 4 = cuadrícula de 2 x 2."""
+    """De 1 a 3 paneles van en una fila, sin celdas vacías; 4 van en una cuadrícula de 2 x 2."""
     w, h = size
-    if n == 1:
-        return [pygame.Rect(0, 0, w, h)]
-    if n == 2:
-        return [pygame.Rect(0, 0, w // 2, h), pygame.Rect(w // 2, 0, w - w // 2, h)]
-    if n in (3, 4):
-        cells = [pygame.Rect(0, 0, w // 2, h // 2), pygame.Rect(w // 2, 0, w - w // 2, h // 2),
-                 pygame.Rect(0, h // 2, w // 2, h - h // 2), pygame.Rect(w // 2, h // 2, w - w // 2, h - h // 2)]
-        return cells[:n]
+    if n in (1, 2, 3):
+        edges = [w * i // n for i in range(n + 1)]
+        return [pygame.Rect(edges[i], 0, edges[i + 1] - edges[i], h) for i in range(n)]
+    if n == 4:
+        return [pygame.Rect(0, 0, w // 2, h // 2), pygame.Rect(w // 2, 0, w - w // 2, h // 2),
+                pygame.Rect(0, h // 2, w // 2, h - h // 2), pygame.Rect(w // 2, h // 2, w - w // 2, h - h // 2)]
     raise ValueError(f"Se pueden mostrar de 1 a 4 agentes, no {n}")
 
 
