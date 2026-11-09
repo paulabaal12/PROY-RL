@@ -1,6 +1,8 @@
 """Tests de los baselines (docs/env_design.md, sección 4.3)."""
 
-from agents.baselines import EdfHeuristicPolicy, FifoHeuristicPolicy, RandomPolicy
+from agents.baselines import (
+    EdfHeuristicPolicy, FifoHeuristicPolicy, RandomPolicy, TriageHeuristicPolicy,
+)
 from envs.kitchen_env import KitchenEnv
 
 
@@ -34,6 +36,22 @@ def test_edf_never_takes_invalid_actions():
         for seed in range(5):
             _, events = play(env, EdfHeuristicPolicy(window), seed)
             assert count(events, "invalid") == 0
+
+
+def test_triage_never_takes_invalid_actions():
+    for window in (1, 4):
+        env = KitchenEnv(window=window, kitchen="random")
+        for seed in range(5):
+            _, events = play(env, TriageHeuristicPolicy(window), seed)
+            assert count(events, "invalid") == 0
+
+
+def test_triage_beats_fifo_when_saturated():
+    # Criterio 4 del Paso 0: con la cocina saturada, elegir bien la orden debe valer.
+    env = KitchenEnv(window=6, kitchen="hard")
+    fifo = sum(play(env, FifoHeuristicPolicy(6), seed)[0] for seed in range(10))
+    triage = sum(play(env, TriageHeuristicPolicy(6), seed)[0] for seed in range(10))
+    assert triage > fifo + 300     # más de 30 puntos por episodio
 
 
 def test_fifo_only_touches_slot_zero():

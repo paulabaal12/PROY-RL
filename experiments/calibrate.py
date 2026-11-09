@@ -18,7 +18,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from agents.baselines import EdfHeuristicPolicy, FifoHeuristicPolicy, RandomPolicy
+from agents.baselines import (
+    EdfHeuristicPolicy, FifoHeuristicPolicy, RandomPolicy, TriageHeuristicPolicy,
+)
 from envs.kitchen_env import KitchenEnv
 from experiments.evaluate import (
     SCENARIOS, VALIDATION_BASE_SEED, evaluate, evaluate_scenarios, to_markdown,
@@ -28,7 +30,7 @@ FIGURES_DIR = Path("results/figures")
 TABLES_DIR = Path("results/tables")
 
 # Paleta categórica en orden fijo y colores de texto (skill dataviz, paleta de referencia)
-SERIES = ("#2a78d6", "#eb6834", "#1baf7a")
+SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100")
 SURFACE, TEXT, TEXT_SECONDARY, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 NEVER = "nunca"   # etiqueta de "no probar nunca" en el barrido
 
@@ -104,13 +106,14 @@ def default_window(lengths_df: pd.DataFrame, quantile: float = 0.9) -> int:
 # --- 4. Que priorizar importe -----------------------------------------------
 
 def prioritization_check(window: int = 6, n_episodes: int = 100) -> pd.DataFrame:
-    """FIFO (solo la orden más antigua) vs. EDF (elige por hora de entrega)."""
+    """FIFO (solo la más antigua) vs. EDF (por hora de entrega) vs. triage (descarta imposibles)."""
     kwargs = {"window": window}
+    policies = {"fifo": FifoHeuristicPolicy, "edf": EdfHeuristicPolicy,
+                "triage": TriageHeuristicPolicy}
     frames = [
-        evaluate_scenarios(lambda env: FifoHeuristicPolicy(window), ["random", "hard"],
-                           n_episodes, VALIDATION_BASE_SEED, kwargs).assign(policy="fifo"),
-        evaluate_scenarios(lambda env: EdfHeuristicPolicy(window), ["random", "hard"],
-                           n_episodes, VALIDATION_BASE_SEED, kwargs).assign(policy="edf"),
+        evaluate_scenarios(lambda env, cls=cls: cls(window), ["random", "hard"],
+                           n_episodes, VALIDATION_BASE_SEED, kwargs).assign(policy=name)
+        for name, cls in policies.items()
     ]
     return pd.concat(frames, ignore_index=True)
 
@@ -201,12 +204,12 @@ def plot_queue_lengths(lengths_df: pd.DataFrame, quantile: float = 0.9,
 
 
 def plot_prioritization(prio_df: pd.DataFrame, out_dir: Path | None = FIGURES_DIR):
-    """Retorno de FIFO vs. EDF por escenario (media ± desviación estándar)."""
+    """Retorno de cada heurística por escenario (media ± desviación estándar)."""
     grouped = prio_df.groupby(["scenario", "policy"], sort=False)["return"]
     means, stds = grouped.mean().unstack(), grouped.std().unstack()
     fig, ax = plt.subplots(figsize=(6, 3.4))
     _grouped_bars(ax, means, stds)
-    _style(ax, "¿Priorizar importa? FIFO vs. EDF", "escenario", "retorno por episodio")
+    _style(ax, "¿Priorizar importa? FIFO vs. EDF vs. triage", "escenario", "retorno por episodio")
     return _save(fig, "prioritization", out_dir)
 
 
@@ -247,7 +250,7 @@ def main():
     print("Mejor frecuencia de prueba por (costo, σ_obs):")
     print(to_markdown(best))
     print(f"\nN por defecto (cuantil 0.9): {default_window(lengths)}")
-    for name, df in (("FIFO vs. EDF", prio), ("Aleatoria vs. FIFO", diff)):
+    for name, df in (("FIFO vs. EDF vs. triage", prio), ("Aleatoria vs. FIFO", diff)):
         summary = df.groupby(["scenario", "policy"], sort=False)[["return", "on_time_rate"]].mean()
         print(f"\n{name}:\n{summary.round(3)}")
 

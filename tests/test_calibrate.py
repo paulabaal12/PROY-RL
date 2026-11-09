@@ -45,7 +45,8 @@ def test_checks_run_and_return_frames(tmp_path):
     lengths = calibrate.queue_lengths(n_episodes=2)
     assert len(lengths) == 2 * 200
     prio = calibrate.prioritization_check(n_episodes=2)
-    assert set(prio["policy"]) == {"fifo", "edf"} and set(prio["scenario"]) == {"random", "hard"}
+    assert set(prio["policy"]) == {"fifo", "edf", "triage"}
+    assert set(prio["scenario"]) == {"random", "hard"}
     diff = calibrate.difficulty_check(n_episodes=2)
     assert set(diff["policy"]) == {"random", "fifo"}
 

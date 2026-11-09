@@ -6,11 +6,11 @@ Deciden SOLO con la observación (igual que los agentes de RL), nunca con
 
 import numpy as np
 
-from envs.kitchen_config import BURNT_FROM, RAW_BELOW
+from envs.kitchen_config import BURNT_FROM, DISH_PREP, DISH_RATE_RANGE, RAW_BELOW
 from envs.kitchen_env import (
-    OP_DISCARD, OP_SERVE, OP_TASTE, SINCE_TASTE_CAP, SL_PREP_PROGRESS, SL_PRESENT,
+    OP_DISCARD, OP_SERVE, OP_TASTE, SINCE_TASTE_CAP, SL_DISH, SL_PREP_PROGRESS, SL_PRESENT,
     SL_TIME_TO_DUE, SLOT_FEATURES, ST_AVAILABLE, ST_HAS_TASTED, ST_LAST_TASTE, ST_OCCUPIED,
-    ST_SINCE_TASTE, ST_VISUAL, STATION_FEATURES, ActionLayout,
+    ST_SINCE_TASTE, ST_VISUAL, STATION_FEATURES, TIME_NORM, ActionLayout,
 )
 
 
@@ -135,4 +135,56 @@ class EdfHeuristicPolicy(FifoHeuristicPolicy):
         return self.layout.WAIT
 
 
-__all__ = ["RandomPolicy", "FifoHeuristicPolicy", "EdfHeuristicPolicy"]
+class TriageHeuristicPolicy(FifoHeuristicPolicy):
+    """Prioriza como un chef bajo presión: no persigue órdenes que ya no se salvan.
+
+    Solo se usa en el Paso 0 (criterio 4). La EDF pura no supera a la FIFO porque,
+    con la cocina saturada, gasta su tiempo en las órdenes más atrasadas, que de
+    todos modos van a expirar. Esta variante estima cuánto le falta a cada orden
+    (preparación restante + cocción esperada según el plato) y:
+
+      1. ignora las que ya no alcanzan a salir antes de que el cliente se vaya;
+      2. atiende primero las que todavía pueden entregarse a tiempo;
+      3. entre ellas, prefiere la que requiere menos preparación del chef.
+    """
+
+    # Nivel de cocción objetivo: el centro de la ventana de "bien cocido"
+    COOK_TARGET = (RAW_BELOW + BURNT_FROM) / 2
+
+    def __init__(self, window: int, patience: int = 10, **kwargs):
+        super().__init__(window, **kwargs)
+        self.patience = patience
+
+    def _estimate(self, slot: np.ndarray) -> tuple[float, float, float]:
+        """(preparación restante, tiempo total de trabajo, pasos hasta la hora de entrega)."""
+        dish = int(np.argmax(slot[SL_DISH:SL_DISH + len(DISH_PREP)]))
+        prep_left = (1.0 - float(slot[SL_PREP_PROGRESS])) * DISH_PREP[dish]
+        cook = self.COOK_TARGET / float(np.mean(DISH_RATE_RANGE[dish]))
+        return prep_left, prep_left + cook, float(slot[SL_TIME_TO_DUE]) * TIME_NORM
+
+    def __call__(self, obs: np.ndarray) -> int:
+        stations, slots, free_station = self._split(obs)
+        action = self._station_action(stations)
+        if action is not None:
+            return action
+        ranked = []
+        for i, slot in enumerate(slots):
+            if slot[SL_PRESENT] < 0.5:
+                continue
+            prep_left, work, time_to_due = self._estimate(slot)
+            if time_to_due + self.patience < work:
+                continue                                # ya no alcanza: no gastar tiempo en ella
+            slack = time_to_due - work
+            ranked.append(((0 if slack >= 0 else 1, prep_left, slack), i))
+        order = [i for _, i in sorted(ranked)]
+        if free_station:
+            for i in order:
+                if slots[i][SL_PREP_PROGRESS] >= 1.0:
+                    return self.layout.place(i)
+        for i in order:
+            if slots[i][SL_PREP_PROGRESS] < 1.0:
+                return self.layout.prep(i)
+        return self.layout.WAIT
+
+
+__all__ = ["RandomPolicy", "FifoHeuristicPolicy", "EdfHeuristicPolicy", "TriageHeuristicPolicy"]
