@@ -5,27 +5,27 @@ import math
 import pygame
 
 from viz import sprites
-from viz.iso import design_frame
+from viz.iso import design_frame, layout_for
 from viz.scene import Phase, ease
-from viz.style import DISH_COLORS, DISH_NAMES, PALETTE
+from viz.style import DISH_NAMES, PALETTE
 from viz.timeline import OrderView, Snapshot, StepScript
 
 CARD_W, CARD_H, CARD_GAP = 124, 36, 4
-COLUMN_X, COLUMN_TOP, COLUMN_BOTTOM = 22, 40, 286   # unidades del mockup
 
 
-def order_column_layout(n_orders: int, height: float) -> tuple[int, int]:
+def order_column_layout(n_orders: int, height: float, columns: int = 1) -> tuple[int, int]:
     """(tarjetas que se muestran, órdenes escondidas en el chip "+k más")."""
-    fit = max(1, int(height // (CARD_H + CARD_GAP)))
+    fit = max(1, int(height // (CARD_H + CARD_GAP))) * columns
     if n_orders <= fit:
         return n_orders, 0
     return fit - 1, n_orders - fit + 1
 
 
-def visible_orders(ids: list[int], focus: int | None, height: float) -> tuple[list[int], int]:
+def visible_orders(ids: list[int], focus: int | None, height: float,
+                   columns: int = 1) -> tuple[list[int], int]:
     """Órdenes con tarjeta (en orden) y cuántas van al chip. La orden en la que
     trabaja el chef siempre se muestra: si no cabe, toma el último lugar."""
-    shown, hidden = order_column_layout(len(ids), height)
+    shown, hidden = order_column_layout(len(ids), height, columns)
     out = ids[:shown]
     if focus in ids and focus not in out and out:
         out[-1] = focus
@@ -51,10 +51,8 @@ def _card(order: OrderView, k: float, patience: int, focused: bool, shirt, mark:
     ol, fg = PALETTE["outline"], PALETTE["hud_fg"]
 
     # Fila 1: plato, nombre y número
-    dot = (box.x + 10 * k, box.y + 8 * k)
-    pygame.draw.circle(img, ol, dot, 5.4 * k)
-    pygame.draw.circle(img, DISH_COLORS[order.dish], dot, 4.2 * k)
-    sprites.text(img, DISH_NAMES[order.dish], (box.x + 19 * k, box.y + 8 * k), int(10.5 * k), fg, anchor="midleft")
+    sprites.draw_food(img, (box.x + 11 * k, box.y + 8 * k), order.dish, 1.15, 7.5 * k, k * 0.7)
+    sprites.text(img, DISH_NAMES[order.dish], (box.x + 21 * k, box.y + 8 * k), int(10.5 * k), fg, anchor="midleft")
     sprites.text(img, f"#{order.id}", (box.right - 7 * k, box.y + 8 * k), int(9.5 * k), (150, 120, 100),
                  anchor="midright")
 
@@ -107,7 +105,9 @@ def _card(order: OrderView, k: float, patience: int, focused: bool, shirt, mark:
 
 def draw_hud(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Snapshot,
              script: StepScript, frac: float, *, title: str, shirt, patience: int, horizon: int) -> None:
-    k, x0, y0 = design_frame(rect)
+    layout = layout_for(rect)
+    k, x0, y0 = design_frame(rect, layout.design)
+    width, height = layout.design
     ph = Phase(frac)
     s = ease(ph.settle)
     fg = PALETTE["hud_fg"]
@@ -124,13 +124,14 @@ def draw_hud(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Snaps
                      border_top_left_radius=int(10 * k), border_bottom_left_radius=int(10 * k))
     surf.blit(label, label.get_rect(midleft=(tag.x + 13 * k, tag.centery)))
 
-    _draw_orders(surf, k, D, prev, cur, script, s, shirt, patience)
+    _draw_orders(surf, k, D, layout, prev, cur, script, s, shirt, patience)
+    _draw_legend(surf, k, D(width / 2, height - 19))
 
     # Reloj
     t_shown = cur.t if s > 0 else prev.t
     clock = sprites.font(int(11 * k)).render(f"t = {t_shown} / {horizon}", True, fg)
     box = pygame.Rect(0, 0, clock.get_width() + 30 * k, 22 * k)
-    box.bottomleft = D(10, 312)
+    box.bottomleft = D(10, height - 8)
     _shadow_box(surf, box, k)
     sprites.draw_icon(surf, "clock", (box.x + 12 * k, box.centery), 13 * k)
     surf.blit(clock, clock.get_rect(midleft=(box.x + 22 * k, box.centery)))
@@ -143,17 +144,37 @@ def draw_hud(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Snaps
         color = PALETTE["money_green"] if cur.score > prev.score else PALETTE["money_red"]
     score = sprites.font(int(15 * k * bump)).render(f"{value:+.1f}", True, color)
     box = pygame.Rect(0, 0, score.get_width() + 20 * k, 24 * k)
-    box.bottomright = D(460, 312)
+    box.bottomright = D(width - 10, height - 8)
     _shadow_box(surf, box, k)
     surf.blit(score, score.get_rect(center=box.center))
 
 
-def _draw_orders(surf, k, D, prev, cur, script, s, shirt, patience):
+def _draw_legend(surf, k, center):
+    """Explica los dos marcadores de la barra de cocción."""
+    cx, cy = center
+    ol, fg = PALETTE["outline"], PALETTE["hud_fg"]
+    size = int(8.5 * k)
+    pygame.draw.polygon(surf, ol, [(cx - 44 * k, cy + 3 * k), (cx - 47.5 * k, cy - 3 * k), (cx - 40.5 * k, cy - 3 * k)])
+    sprites.text(surf, "real", (cx - 37 * k, cy), size, fg, anchor="midleft")
+    triangle = [(cx - 6 * k, cy - 3 * k), (cx - 9.5 * k, cy + 3 * k), (cx - 2.5 * k, cy + 3 * k)]
+    pygame.draw.polygon(surf, PALETTE["hud_bg"], triangle)
+    pygame.draw.polygon(surf, ol, triangle, max(1, round(k)))
+    sprites.text(surf, "agent sees", (cx + 1 * k, cy), size, fg, anchor="midleft")
+
+
+def _draw_orders(surf, k, D, layout, prev, cur, script, s, shirt, patience):
     pitch = CARD_H + CARD_GAP
-    height = COLUMN_BOTTOM - COLUMN_TOP
-    prev_ids, _ = visible_orders([o.id for o in prev.orders], script.focus_order, height)
-    cur_ids, _ = visible_orders([o.id for o in cur.orders], script.focus_order, height)
-    shown, hidden = order_column_layout(len(cur.orders if s > 0 else prev.orders), height)
+    columns = layout.columns
+    height = layout.cards_bottom - layout.cards_top
+
+    def spot(index: float) -> tuple[float, float]:
+        """Posición de la tarjeta número `index` en la grilla, en unidades del lienzo."""
+        whole = round(index)
+        return layout.cards_x + (whole % columns) * layout.column_step, layout.cards_top + (whole // columns) * pitch
+
+    prev_ids, _ = visible_orders([o.id for o in prev.orders], script.focus_order, height, columns)
+    cur_ids, _ = visible_orders([o.id for o in cur.orders], script.focus_order, height, columns)
+    shown, hidden = order_column_layout(len(cur.orders if s > 0 else prev.orders), height, columns)
     prev_idx = {oid: i for i, oid in enumerate(prev_ids)}
     cur_idx = {oid: i for i, oid in enumerate(cur_ids)}
     views = {o.id: o for o in prev.orders}
@@ -165,9 +186,13 @@ def _draw_orders(surf, k, D, prev, cur, script, s, shirt, patience):
         yp, yc = prev_idx.get(oid), cur_idx.get(oid)
         alpha, dx, mark = 255, 0.0, None
         if yp is not None and yc is not None:
-            y = yp + (yc - yp) * s
+            ax, ay = spot(yp)
+            bx, by = spot(yc)
+            card_x, card_y = ax + (bx - ax) * s, ay + (by - ay) * s
+            y = yc if s >= 0.5 else yp
         elif yp is not None:                 # sale de la lista: servida o expirada
             y = yp
+            card_x, card_y = spot(yp)
             alpha = 255 * (1 - s)
             if oid in script.expired:
                 mark = "expired"
@@ -177,6 +202,7 @@ def _draw_orders(surf, k, D, prev, cur, script, s, shirt, patience):
                 alpha = 255
         else:                                # llegó en este paso
             y, alpha, dx = yc, 255 * s, -30 * (1 - s)
+            card_x, card_y = spot(yc)
         if round(y) >= shown or alpha <= 0:
             continue
         order = views[oid]
@@ -185,14 +211,14 @@ def _draw_orders(surf, k, D, prev, cur, script, s, shirt, patience):
         if not order.in_window:
             alpha *= 0.45
         img.set_alpha(int(alpha))
-        x, top = D(COLUMN_X + dx, COLUMN_TOP + y * pitch)
+        x, top = D(card_x + dx, card_y)
         surf.blit(img, (x - pad, top - pad))
         if focused:
             tri = [(x - 13 * k, top + 6 * k), (x - 4 * k, top + 11 * k), (x - 13 * k, top + 16 * k)]
             sprites.poly(surf, shirt, tri, k, ow=1.2)
 
     if hidden:
-        x, top = D(COLUMN_X, COLUMN_TOP + shown * pitch)
+        x, top = D(*spot(shown))
         chip = pygame.Rect(x, top, 70 * k, 18 * k)
         _shadow_box(surf, chip, k)
         sprites.text(surf, f"+{hidden} more", chip.center, int(9.5 * k), PALETTE["hud_fg"])

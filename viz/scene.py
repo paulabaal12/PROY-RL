@@ -16,9 +16,7 @@ import zlib
 import pygame
 
 from viz import sprites
-from viz.iso import (
-    COUNTER_HEIGHT, FLOOR, KITCHEN_ORIGIN, STAND_TILES, STATION_TILES, TILE, Iso, design_frame,
-)
+from viz.iso import COUNTER_HEIGHT, FLOOR, STAND_TILES, Iso, design_frame, layout_for
 from viz.style import DISH_COLORS, PALETTE, PHASES
 from viz.timeline import Snapshot, StepScript
 
@@ -51,8 +49,36 @@ class Phase:
 
 
 def make_iso(rect) -> Iso:
-    k, x0, y0 = design_frame(rect)
-    return Iso((x0 + KITCHEN_ORIGIN[0] * k, y0 + KITCHEN_ORIGIN[1] * k), TILE[0] * k, TILE[1] * k)
+    layout = layout_for(rect)
+    k, x0, y0 = design_frame(rect, layout.design)
+    return Iso((x0 + layout.origin[0] * k, y0 + layout.origin[1] * k),
+               layout.tile[0] * k, layout.tile[1] * k)
+
+
+_backgrounds: dict[tuple, pygame.Surface] = {}
+
+
+def _background(rect, iso: Iso) -> pygame.Surface:
+    """Piso y paredes: no cambian, así que se dibujan una vez y se reutilizan."""
+    key = (rect.size, round(iso.ox - rect.x, 3), round(iso.oy - rect.y, 3), iso.tile_w)
+    if key not in _backgrounds:
+        if not _backgrounds:
+            pygame.register_quit(_backgrounds.clear)
+        image = pygame.Surface(rect.size)
+        image.fill(PALETTE["bg"])
+        local = Iso((iso.ox - rect.x, iso.oy - rect.y), iso.tile_w, iso.tile_h)
+        sprites.draw_floor(image, local, FLOOR)
+        sprites.draw_walls(image, local, FLOOR)
+        _backgrounds[key] = image
+    return _backgrounds[key]
+
+
+def _shown_cook(b: int, prev: Snapshot, cur: Snapshot, view, frac: float) -> float:
+    """Nivel de cocción que se dibuja: avanza suave dentro del paso, sin saltos."""
+    before, after = prev.burners[b], cur.burners[b]
+    if before.order_id is not None and before.order_id == after.order_id:
+        return before.cook + (after.cook - before.cook) * frac
+    return view.cook if view.cook is not None else 0.0
 
 
 def stand_point(iso: Iso, where: str):
@@ -99,9 +125,9 @@ def draw_scene(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Sna
     iso = make_iso(rect)
     k = iso.k
     t_anim = script.t - 1 + frac          # tiempo continuo, para llamas y vapor
-    surf.fill(PALETTE["bg"], rect)
     clip = surf.get_clip()
     surf.set_clip(rect)
+    surf.blit(_background(rect, iso), rect.topleft)
 
     pickup = None
     if script.carry == "board":
@@ -111,7 +137,6 @@ def draw_scene(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Sna
     chef_pos, picked_up = walk(iso, script.path, ph.travel, pickup)
     anim, a = script.anim, ph.action
 
-    sprites.draw_floor(surf, iso, FLOOR)
     # Orden del pintor: por x + y
     tiles = [(0, 0, "counter"), (1, 0, "prep"), (0, 1, "counter"), (2, 0, "burner0"),
              (0, 2, "trash"), (3, 0, "burner1"), (0, 3, "counter"), (4, 0, "burner2"), (0, 4, "serve")]
@@ -125,10 +150,16 @@ def draw_scene(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Sna
         elif kind == "prep":
             board_top = sprites.draw_block(surf, iso, x, y, COUNTER_HEIGHT)
             bx, by = board_top
-            sprites.poly(surf, PALETTE["board"], [(bx - 14 * k, by), (bx, by - 7 * k), (bx + 14 * k, by),
-                                                   (bx, by + 7 * k)], k)
-            pygame.draw.line(surf, (200, 200, 205), (bx + 3 * k, by - 2 * k), (bx + 10 * k, by - 5.5 * k),
-                             max(2, round(2.2 * k)))
+            sprites.poly(surf, PALETTE["board"], [(bx - 16 * k, by), (bx, by - 8 * k), (bx + 16 * k, by),
+                                                   (bx, by + 8 * k)], k)
+            chopping = anim == "prep" and script.dish is not None
+            if chopping:
+                sprites.draw_food(surf, (bx - 2 * k, by), script.dish, 0.0, 9 * k, k)
+            chop = 3.5 * k * abs(math.sin(a * math.pi * 6)) if chopping else 0.0
+            pygame.draw.line(surf, PALETTE["handle"], (bx + 6 * k, by - 6 * k - chop), (bx + 13 * k, by - 9 * k - chop),
+                             max(2, round(2.6 * k)))
+            pygame.draw.line(surf, (214, 218, 224), (bx - 2 * k, by - 2 * k - chop), (bx + 6 * k, by - 6 * k - chop),
+                             max(2, round(2.8 * k)))
         elif kind == "trash":
             opening, bounce = 0.0, 0.0
             if anim == "discard":
@@ -137,7 +168,8 @@ def draw_scene(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Sna
             trash_top = sprites.draw_trash(surf, iso, opening, bounce)
         elif kind == "serve":
             window_top = sprites.draw_block(surf, iso, x, y, COUNTER_HEIGHT, top=PALETTE["serve"])
-            sprites.ellipse(surf, PALETTE["plate"], window_top, 11 * k, 5 * k, k)
+            sprites.ellipse(surf, PALETTE["plate"], window_top, 14 * k, 6.4 * k, k)
+            sprites.draw_bell(surf, (window_top[0] + 15 * k, window_top[1] - 5 * k), k)
         else:
             b = int(kind[-1])
             view = _burner_view(b, prev, cur, script, ph, picked_up)
@@ -154,8 +186,10 @@ def draw_scene(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Sna
             if view.revealed_burnt:
                 lid = 1.0
             steam = 1.0 if occupied else 0.0
+            cook = _shown_cook(b, prev, cur, view, frac) if occupied else 0.0
             rim = sprites.draw_burner(surf, iso, b + 2, available=view.available, lid=lid, flame=flame,
-                                      steam=steam, revealed_burnt=view.revealed_burnt, t_anim=t_anim)
+                                      steam=steam, revealed_burnt=view.revealed_burnt, t_anim=t_anim,
+                                      dish=view.dish, cook=cook)
             burner_tops[b] = rim
             if script.burner == b and anim == "taste_burnt" and a >= 0.35:
                 u = clamp01((a - 0.35) / 0.65)
@@ -169,14 +203,13 @@ def draw_scene(surf: pygame.Surface, rect: pygame.Rect, prev: Snapshot, cur: Sna
                                                                 rim[1] - 6 * k + 0.5 * r * math.sin(ang)),
                                         5 * k * (1 + ph.settle), 220 * (1 - ph.settle))
             if occupied:
-                pill = (rim[0], rim[1] - 36 * k)
+                pill = (rim[0], rim[1] - 42 * k)
                 label = f"#{view.order_id}"
-                r = sprites.text(surf, label, pill, int(9.5 * k), PALETTE["hud_fg"], alpha=0)
-                box = r.inflate(10 * k, 4 * k)
-                sprites.rrect(surf, PALETTE["hud_bg"], box, box.height / 2, k, ow=1.2)
-                pygame.draw.circle(surf, DISH_COLORS[view.dish], (box.left + 1 * k, box.centery), 4 * k)
-                pygame.draw.circle(surf, PALETTE["outline"], (box.left + 1 * k, box.centery), 4 * k, max(1, round(k)))
-                sprites.text(surf, label, (pill[0] + 2 * k, pill[1]), int(9.5 * k), PALETTE["hud_fg"])
+                r = sprites.text(surf, label, pill, int(8 * k), PALETTE["hud_fg"], alpha=0)
+                box = r.inflate(9 * k, 3 * k)
+                sprites.rrect(surf, PALETTE["hud_bg"], box, box.height / 2, k, ow=1.1)
+                sprites.text(surf, label, pill, int(8 * k), PALETTE["hud_fg"])
+                sprites.draw_gauge(surf, (rim[0], rim[1] - 28 * k), cook, view.visual, k)
 
     _draw_chef_and_action(surf, iso, script, ph, chef_pos, picked_up, shirt, burner_tops,
                           window_top, board_top, trash_top, t_anim)
@@ -218,8 +251,9 @@ def _draw_chef_and_action(surf, iso, script, ph, chef_pos, picked_up, shirt, bur
     sprites.draw_chef(surf, chef_pos, shirt, lean=lean, wiggle=wiggle, face=face, hop=hop, k=k)
     hand = (chef_pos[0] + HAND[0] * k, chef_pos[1] + HAND[1] * k - hop * k)
     color = DISH_COLORS.get(script.carry_color) if script.carry_color else None
+    food, carry_cook = script.dish, script.carry_cook
     if carrying and color:
-        sprites.draw_carrier(surf, hand, script.carry, color, k)
+        sprites.draw_carrier(surf, hand, script.carry, color, k, food=food, cook=carry_cook)
 
     # Lo que pasa en la estación durante la acción
     if anim == "prep" and board_top and script.dish:
@@ -230,20 +264,24 @@ def _draw_chef_and_action(surf, iso, script, ph, chef_pos, picked_up, shirt, bur
         rim = burner_tops[script.burner]
         pos = lerp(hand, (rim[0], rim[1] - 4 * k), ease(u))
         pos = (pos[0], pos[1] - 18 * k * math.sin(math.pi * u))
-        sprites.draw_carrier(surf, pos, "board", color, k) if u < 0.5 else \
-            sprites.draw_blob(surf, pos, color, 5.5 * k, k)
+        if u < 0.5:
+            sprites.draw_carrier(surf, pos, "board", color, k, food=food, cook=0.0)
+        else:
+            sprites.draw_food(surf, pos, food, 0.0, 9 * k, k)
     elif anim.startswith("serve") and window_top and color:
         if 0.12 <= a < 0.5:
             u = ease((a - 0.12) / 0.38)
-            sprites.draw_carrier(surf, lerp(hand, (window_top[0], window_top[1] - 2 * k), u), "plate", color, k)
+            sprites.draw_carrier(surf, lerp(hand, (window_top[0], window_top[1] - 2 * k), u), "plate", color, k,
+                                 food=food, cook=carry_cook)
         elif a >= 0.5:
-            sprites.draw_carrier(surf, (window_top[0], window_top[1] - 2 * k), "plate", color, k)
+            sprites.draw_carrier(surf, (window_top[0], window_top[1] - 2 * k), "plate", color, k,
+                                 food=food, cook=carry_cook)
         _serve_effects(surf, script, ph, window_top, seed, k)
     elif anim == "discard" and trash_top and color and 0.12 <= a < 0.6:
         u = clamp01((a - 0.12) / 0.48)
         pos = lerp(hand, (trash_top[0], trash_top[1] + 6 * k), ease(u))
         pos = (pos[0], pos[1] - 22 * k * math.sin(math.pi * u))
-        sprites.draw_blob(surf, pos, color, 5.5 * k, k)
+        sprites.draw_food(surf, pos, food, carry_cook, 8 * k, k)
 
     # Íconos sobre la cabeza
     if anim == "taste_raw" and a > 0.15:
@@ -328,12 +366,14 @@ def _preview():
     parser.add_argument("--replay", default="results/replays/sample_fifo.jsonl")
     parser.add_argument("--step", type=int, default=40)
     parser.add_argument("--out", default="results/figures/scene_preview.png")
+    parser.add_argument("--size", default="940x640", help="tamaño de cada panel, ANCHOxALTO")
     args = parser.parse_args()
     pygame.init()
     replay = load_replay(args.replay)
     snaps, scripts = build_timeline(replay)
     i = args.step
-    w, h = 940, 640
+    parser_size = args.size.split("x")
+    w, h = int(parser_size[0]), int(parser_size[1])
     surf = pygame.Surface((w * 2, h * 2))
     for j, frac in enumerate((0.2, 0.55, 0.75, 0.9)):
         rect = pygame.Rect((j % 2) * w, (j // 2) * h, w, h)

@@ -17,6 +17,7 @@ class Step:
     index: int | None     # lugar de la ventana o estación
     reward: float
     info: dict
+    visual: list | None = None   # lectura visual ruidosa de cada estación (lo que ve el agente)
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ def load_replay(path: str | Path) -> Replay:
     if not lines or lines[0].get("kind") != "header":
         raise ReplayError(f"{path} no empieza con un encabezado de replay")
     steps = [Step(t=d["t"], action=d["action"], kind=d["action_kind"], index=d["action_index"],
-                  reward=d["reward"], info=d["info"]) for d in lines[1:]]
+                  reward=d["reward"], info=d["info"], visual=d.get("visual_cook")) for d in lines[1:]]
     if not steps:
         raise ReplayError(f"{path} no tiene pasos")
     return Replay(header=lines[0], steps=steps)

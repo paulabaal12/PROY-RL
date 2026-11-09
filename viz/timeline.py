@@ -34,6 +34,8 @@ class BurnerView:
     order_id: int | None
     dish: str | None
     revealed_burnt: bool   # una prueba dijo "quemado": la tapa queda abierta
+    cook: float | None = None     # nivel real de cocción
+    visual: float | None = None   # lo que ve el agente (lectura con ruido)
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class StepScript:
     expired_burners: list[int]
     arrived: list[int]
     serve_reward: float | None = None   # solo la entrega, sin las expiraciones del mismo paso
+    carry_cook: float = 0.0             # nivel de cocción de lo que lleva en las manos
 
 
 def _burner(k: int) -> str:
@@ -88,8 +91,10 @@ def _snapshot(step: Step, window: int, score: float, chef_at: str,
         if o is not None:
             orders.append(OrderView(o["id"], o["dish"], o["age"], o["due"], o["prep_done"],
                                     o["prep_required"], k, True))
-        burners.append(BurnerView(k < n_stations, o["id"] if o else None,
-                                  o["dish"] if o else None, revealed[k] and o is not None))
+        visual = step.visual[k] if step.visual and o is not None else None
+        burners.append(BurnerView(k < n_stations, o["id"] if o else None, o["dish"] if o else None,
+                                  revealed[k] and o is not None,
+                                  info["true_cook"][k] if o is not None else None, visual))
     orders.sort(key=lambda o: o.id)
     return Snapshot(step.t, orders, burners, score, chef_at)
 
@@ -101,6 +106,7 @@ def _script(step: Step, prev: Snapshot, expire_penalty: float) -> StepScript:
         by_type.setdefault(e["type"], e)
     here = prev.chef_at
     path, carry, carry_color, burner, dish, focus = [here], None, None, None, None, None
+    carry_cook = 0.0
 
     if "invalid" in by_type:
         anim = "invalid"
@@ -125,6 +131,7 @@ def _script(step: Step, prev: Snapshot, expire_penalty: float) -> StepScript:
         anim = SERVE_ANIM.get(e["type"], "discard")
         path, carry = [here, _burner(burner), target], "plate"
         carry_color = "burnt" if classify(e["cook"]) == "burnt" else dish
+        carry_cook = e["cook"]
 
     expired = [e["order"]["id"] for e in events if e["type"] == "expired"]
     if expired or "served_raw" in by_type or "served_burnt" in by_type:
@@ -140,6 +147,7 @@ def _script(step: Step, prev: Snapshot, expire_penalty: float) -> StepScript:
         expired_burners=[k for k, b in enumerate(prev.burners) if b.order_id in expired],
         arrived=[e["order"]["id"] for e in events if e["type"] == "arrived"],
         serve_reward=step.reward + expire_penalty * len(expired) if anim.startswith("serve") else None,
+        carry_cook=carry_cook,
     )
 
 

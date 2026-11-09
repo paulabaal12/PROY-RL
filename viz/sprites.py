@@ -12,7 +12,8 @@ import random
 
 import pygame
 
-from viz.iso import COUNTER_HEIGHT, STATION_TILES, Iso
+from envs.kitchen_config import BURNT_FROM, RAW_BELOW
+from viz.iso import COUNTER_HEIGHT, STATION_TILES, WALL_HEIGHT, Iso
 from viz.style import DISH_COLORS, PALETTE, SHIRTS
 
 OUTLINE_W = 1.6
@@ -163,10 +164,127 @@ def draw_block(surf, iso: Iso, x, y, height, top=None, grey=False):
 
 def draw_floor(surf, iso: Iso, size: int):
     p = iso.to_screen
+    k = iso.k
+    # Base de la maqueta
+    poly(surf, PALETTE["slab_left"], [p(0, size), p(size, size), p(size, size, -9), p(0, size, -9)], k)
+    poly(surf, PALETTE["slab_right"], [p(size, 0), p(size, size), p(size, size, -9), p(size, 0, -9)], k)
     for x in range(size):
         for y in range(size):
             color = PALETTE["floor_b" if (x + y) % 2 else "floor_a"]
             pygame.draw.polygon(surf, color, [p(x, y), p(x + 1, y), p(x + 1, y + 1), p(x, y + 1)])
+    for i in range(size + 1):
+        pygame.draw.line(surf, (226, 200, 166), p(i, 0), p(i, size), max(1, round(0.7 * k)))
+        pygame.draw.line(surf, (226, 200, 166), p(0, i), p(size, i), max(1, round(0.7 * k)))
+    # Sombra que proyectan los mostradores sobre el piso
+    shade = (214, 186, 150)
+    pygame.draw.polygon(surf, shade, [p(1, 1), p(size, 1), p(size, 1.32), p(1.32, 1.32), p(1.32, size), p(1, size)])
+
+
+def _wall_tiles(surf, iso, plane, length, k):
+    """Azulejos de la parte baja de una pared (`plane`: "right" sobre x, "left" sobre y)."""
+    p = (lambda a, z: iso.to_screen(a, 0, z)) if plane == "right" else (lambda a, z: iso.to_screen(0, a, z))
+    tile_h, tile_w = 7.5, 0.4
+    rows = int(WALL_HEIGHT * 0.56 / tile_h)
+    for row in range(rows):
+        offset = (row % 2) * tile_w / 2
+        a = -offset
+        i = 0
+        while a < length:
+            a0, a1 = max(a, 0), min(a + tile_w, length)
+            z0, z1 = row * tile_h, (row + 1) * tile_h
+            color = PALETTE["tile_light" if (i + row) % 2 else "tile_shade"]
+            pts = [p(a0, z1), p(a1, z1), p(a1, z0), p(a0, z0)]
+            pygame.draw.polygon(surf, color, pts)
+            pygame.draw.lines(surf, PALETTE["tile_line"], True, pts, max(1, round(0.5 * k)))
+            a += tile_w
+            i += 1
+
+
+def _shelf(surf, iso, x0, x1, z, k):
+    p = lambda a, h, d=0.0: iso.to_screen(a, d, h)
+    poly(surf, PALETTE["shelf"], [p(x0, z), p(x1, z), p(x1, z, 0.22), p(x0, z, 0.22)], k, ow=1.2)
+    poly(surf, (140, 98, 66), [p(x0, z, 0.22), p(x1, z, 0.22), p(x1, z - 2, 0.22), p(x0, z - 2, 0.22)], k, ow=1.2)
+    jars = [(0.25, (239, 111, 94), 9), (0.62, (108, 193, 90), 11), (1.0, (255, 210, 63), 8), (1.36, (155, 127, 212), 10)]
+    for offset, color, height in jars:
+        if x0 + offset > x1 - 0.12:
+            continue
+        cx, cy = p(x0 + offset, z, 0.12)
+        rect = pygame.Rect(cx - 4 * k, cy - height * k, 8 * k, height * k)
+        rrect(surf, (240, 246, 248), rect, 2 * k, k, ow=1.1)
+        pygame.draw.rect(surf, color, pygame.Rect(rect.x + 1.4 * k, rect.y + 0.42 * rect.h, rect.w - 2.8 * k, rect.h * 0.5),
+                         border_radius=max(1, round(k)))
+        rrect(surf, PALETTE["shelf"], pygame.Rect(cx - 4.6 * k, rect.y - 2.2 * k, 9.2 * k, 3 * k), 1 * k, k, ow=1)
+
+
+def _window(surf, iso, y0, y1, z0, z1, k):
+    p = lambda y, z: iso.to_screen(0, y, z)
+    poly(surf, PALETTE["frame"], [p(y0 - 0.1, z1 + 2.6), p(y1 + 0.1, z1 + 2.6), p(y1 + 0.1, z0 - 2.6), p(y0 - 0.1, z0 - 2.6)], k, ow=1.3)
+    steps = 6
+    for i in range(steps):
+        z_a, z_b = z1 - (z1 - z0) * i / steps, z1 - (z1 - z0) * (i + 1) / steps
+        pygame.draw.polygon(surf, _mix(PALETTE["sky"], PALETTE["sky_low"], i / (steps - 1)),
+                            [p(y0, z_a), p(y1, z_a), p(y1, z_b), p(y0, z_b)])
+    for cy, cz, r in ((y0 + 0.45, z0 + 10, 2.4), (y0 + 0.6, z0 + 11, 3.0), (y0 + 0.8, z0 + 10, 2.3)):
+        pygame.draw.circle(surf, (255, 255, 255), p(cy, cz), r * k)
+    pygame.draw.lines(surf, PALETTE["outline"], True, [p(y0, z1), p(y1, z1), p(y1, z0), p(y0, z0)], _w(k, 1.1))
+    middle = (y0 + y1) / 2
+    pygame.draw.line(surf, PALETTE["frame"], p(middle, z0), p(middle, z1), max(2, round(2 * k)))
+    pygame.draw.line(surf, PALETTE["frame"], p(y0, (z0 + z1) / 2), p(y1, (z0 + z1) / 2), max(2, round(2 * k)))
+
+
+def _awning(surf, iso, y0, y1, z, k):
+    p = lambda y, h, d=0.0: iso.to_screen(d, y, h)
+    stripes = 6
+    for i in range(stripes):
+        a = y0 + (y1 - y0) * i / stripes
+        b = y0 + (y1 - y0) * (i + 1) / stripes
+        poly(surf, PALETTE["awning_a" if i % 2 == 0 else "awning_b"],
+             [p(a, z + 11), p(b, z + 11), p(b, z, 0.34), p(a, z, 0.34)], k, ow=0.9)
+
+
+def _hanging_tools(surf, iso, x0, x1, z, k):
+    p = lambda x, h: iso.to_screen(x, 0, h)
+    pygame.draw.line(surf, PALETTE["metal"], p(x0, z), p(x1, z), max(2, round(1.6 * k)))
+    for i, x in enumerate(((x0 + 0.2), (x0 + x1) / 2, (x1 - 0.2))):
+        cx, cy = p(x, z)
+        pygame.draw.line(surf, PALETTE["outline"], (cx, cy), (cx, cy + 4 * k), _w(k, 1.0))
+        if i == 1:
+            rrect(surf, PALETTE["handle"], pygame.Rect(cx - 1.2 * k, cy + 4 * k, 2.4 * k, 9 * k), 1 * k, k, ow=0.8)
+            circle(surf, PALETTE["pan"], (cx, cy + 16 * k), 5 * k, k, ow=1.1)
+        else:
+            rrect(surf, PALETTE["metal_light"], pygame.Rect(cx - 1 * k, cy + 4 * k, 2 * k, 10 * k), 1 * k, k, ow=0.8)
+            ellipse(surf, PALETTE["metal_light"], (cx, cy + 16 * k), 2.8 * k, 3.6 * k, k, ow=1.0)
+
+
+def draw_walls(surf, iso: Iso, size: int):
+    """Las dos paredes del fondo, con azulejos, repisa, utensilios, ventana y toldo."""
+    k = iso.k
+    h = WALL_HEIGHT
+    right = lambda x, z: iso.to_screen(x, 0, z)
+    left = lambda y, z: iso.to_screen(0, y, z)
+    poly(surf, PALETTE["wall_right"], [right(0, h), right(size, h), right(size, 0), right(0, 0)], k)
+    poly(surf, PALETTE["wall_left"], [left(0, h), left(size, h), left(size, 0), left(0, 0)], k)
+    _wall_tiles(surf, iso, "right", size, k)
+    _wall_tiles(surf, iso, "left", size, k)
+    z_band = WALL_HEIGHT * 0.56 - 0.3
+    pygame.draw.line(surf, PALETTE["outline"], right(0, z_band), right(size, z_band), _w(k, 1.0))
+    pygame.draw.line(surf, PALETTE["outline"], left(0, z_band), left(size, z_band), _w(k, 1.0))
+    _shelf(surf, iso, 0.2, 1.8, 40, k)
+    _hanging_tools(surf, iso, 2.25, 4.75, 46, k)
+    _window(surf, iso, 1.1, 3.1, 31, 46, k)
+    _awning(surf, iso, 3.75, 4.95, 36, k)
+    pygame.draw.lines(surf, PALETTE["outline"], False, [right(size, h), right(0, h), left(size, h)], _w(k, 1.6))
+
+
+def draw_bell(surf, c, k):
+    """Campana de servicio sobre la barra de entrega."""
+    x, y = c
+    ellipse(surf, PALETTE["brass_dark"], (x, y), 6.2 * k, 2.6 * k, k, ow=1.1)
+    dome = [(x - 5 * k, y - 0.6 * k), (x - 3.6 * k, y - 4.4 * k), (x, y - 6 * k), (x + 3.6 * k, y - 4.4 * k),
+            (x + 5 * k, y - 0.6 * k)]
+    poly(surf, PALETTE["brass"], dome, k, ow=1.1)
+    circle(surf, PALETTE["brass_dark"], (x, y - 7 * k), 1.3 * k, k, ow=0.9)
+    soft_ellipse(surf, (255, 255, 255), (x - 1.8 * k, y - 3.8 * k), 1.1 * k, 0.8 * k, 180)
 
 
 def blob_points(c, r):
@@ -183,15 +301,155 @@ def draw_blob(surf, c, color, r, k=1.0):
     soft_ellipse(surf, (255, 255, 255), (c[0] - 0.35 * r, c[1] - 0.7 * r), 0.28 * r, 0.17 * r, 150)
 
 
-def draw_carrier(surf, c, kind, color, k=1.0):
-    """Tabla cuadrada ("board") o plato redondo ("plate") con la comida encima."""
+def draw_carrier(surf, c, kind, color, k=1.0, food=None, cook=0.0):
+    """Tabla ("board") o plato ("plate") con la comida encima.
+
+    Con `food` (plato) dibuja la comida de verdad; si no, una forma simple de color `color`.
+    """
     x, y = c
     if kind == "board":
-        poly(surf, PALETTE["board"], [(x - 13 * k, y), (x, y - 6.5 * k), (x + 13 * k, y),
-                                      (x, y + 6.5 * k)], k)
+        poly(surf, PALETTE["board"], [(x - 15 * k, y), (x, y - 7.5 * k), (x + 15 * k, y),
+                                      (x, y + 7.5 * k)], k)
     else:
-        ellipse(surf, PALETTE["plate"], c, 11 * k, 5 * k, k)
-    draw_blob(surf, (x, y), color, 5.5 * k, k)
+        ellipse(surf, (222, 216, 205), (x, y + 1.2 * k), 14 * k, 6.6 * k, k)
+        ellipse(surf, PALETTE["plate"], c, 14 * k, 6.4 * k, k)
+        ellipse(surf, (255, 253, 248), c, 10 * k, 4.4 * k, k, ow=0)
+    if food:
+        draw_food(surf, (x, y - 1.5 * k), food, cook, 9 * k, k)
+    else:
+        draw_blob(surf, (x, y), color, 5.5 * k, k)
+
+
+# ---------------------------------------------------------------- comida
+def _clamp(u: float) -> float:
+    return max(0.0, min(1.0, u))
+
+
+def _mix(a, b, u: float):
+    u = _clamp(u)
+    return tuple(round(p + (q - p) * u) for p, q in zip(a, b))
+
+
+def _doneness(cook: float) -> tuple[float, float]:
+    """(cuánto se ha cocido, cuánto se ha quemado), ambos en [0, 1]."""
+    return _clamp(cook / RAW_BELOW), _clamp((cook - BURNT_FROM) / 0.25)
+
+
+CHAR = (43, 36, 34)
+
+
+def _food_steak(surf, c, s, k, done, burnt):
+    x, y = c
+    meat = _mix(_mix((222, 92, 108), (150, 84, 54), done), CHAR, burnt)
+    side = _mix(_mix((176, 62, 78), (104, 56, 36), done), (24, 20, 19), burnt)
+    fat = _mix(_mix((255, 226, 214), (232, 196, 150), done), (70, 58, 52), burnt)
+    pts = [(x - 9.6 * s, y - 0.6 * s), (x - 7 * s, y - 5 * s), (x - 1 * s, y - 6 * s), (x + 6 * s, y - 5.2 * s),
+           (x + 9.8 * s, y - 1.5 * s), (x + 8.6 * s, y + 3.4 * s), (x + 2 * s, y + 5.2 * s),
+           (x - 6 * s, y + 4.4 * s)]
+    poly(surf, side, [(px, py + 2.2 * s) for px, py in pts], k, ow=1.0)
+    poly(surf, fat, pts, k, ow=1.0)
+    inner = [(x + (px - x) * 0.84, y + (py - y) * 0.82) for px, py in pts]
+    pygame.draw.polygon(surf, meat, inner)
+    if done > 0.45 and burnt < 0.8:
+        mark = _mix((96, 52, 34), (58, 34, 24), done)
+        alpha = int(255 * _clamp((done - 0.45) / 0.35))
+        for dx in (-4.6, -0.6, 3.4):
+            start, end = (x + (dx - 2.2) * s, y + 3.2 * s), (x + (dx + 2.6) * s, y - 3.4 * s)
+            color = _mix(meat, mark, alpha / 255)
+            pygame.draw.line(surf, color, start, end, max(1, round(1.5 * s)))
+    soft_ellipse(surf, (255, 255, 255), (x - 3.4 * s, y - 3.2 * s), 2.8 * s, 0.9 * s, 110 * (1 - burnt))
+
+
+def _food_egg(surf, c, s, k, done, burnt):
+    x, y = c
+    white = _mix(_mix((221, 230, 236), (255, 255, 252), done), (92, 74, 62), burnt)
+    edge = _mix(_mix((205, 214, 222), (232, 184, 112), done), CHAR, burnt)
+    lobes = [(-4.6, -0.8, 5.0, 3.5), (3.8, -1.6, 5.6, 3.7), (-0.6, 2.3, 6.0, 3.3), (5.2, 1.8, 3.8, 2.8)]
+    w = _w(k, 1.0)
+    for dx, dy, rx, ry in lobes:
+        rect = pygame.Rect(0, 0, 2 * rx * s + 2 * w, 2 * ry * s + 2 * w)
+        rect.center = (x + dx * s, y + dy * s)
+        pygame.draw.ellipse(surf, PALETTE["outline"], rect)
+    for dx, dy, rx, ry in lobes:
+        rect = pygame.Rect(0, 0, 2 * rx * s, 2 * ry * s)
+        rect.center = (x + dx * s, y + dy * s)
+        pygame.draw.ellipse(surf, edge, rect)
+    for dx, dy, rx, ry in lobes:
+        rect = pygame.Rect(0, 0, 1.7 * rx * s, 1.65 * ry * s)
+        rect.center = (x + dx * s, y + dy * s)
+        pygame.draw.ellipse(surf, white, rect)
+    yolk = _mix(_mix((255, 196, 48), (250, 166, 28), done), (58, 40, 30), burnt)
+    yc = (x, y - 0.6 * s)
+    ellipse(surf, yolk, yc, 3.9 * s, 2.9 * s, k, ow=1.0)
+    soft_ellipse(surf, (255, 255, 255), (yc[0] - 1.3 * s, yc[1] - 1.0 * s), 1.2 * s, 0.7 * s, 200 * (1 - burnt))
+
+
+# Trozos del salteado: (dx, dy, tipo)
+_STIRFRY = [(-5.6, -2.0, "pepper"), (0.6, -3.6, "broccoli"), (5.8, -1.6, "carrot"), (-2.4, 0.6, "carrot"),
+            (3.4, 1.4, "pepper"), (-6.4, 2.4, "broccoli"), (0.2, 3.6, "pepper"), (6.2, 3.0, "broccoli")]
+
+
+def _food_stirfry(surf, c, s, k, done, burnt):
+    x, y = c
+
+    def tint(color):
+        return _mix(_mix(color, tuple(int(v * 0.78) for v in color), done), CHAR, burnt)
+
+    ellipse(surf, tint((226, 190, 120)), (x, y + 0.6 * s), 9.8 * s, 6.2 * s, k, ow=1.0)
+    for dx, dy, kind in sorted(_STIRFRY, key=lambda p: p[1]):
+        px, py = x + dx * s, y + dy * s
+        if kind == "broccoli":
+            pygame.draw.line(surf, tint((168, 214, 120)), (px, py), (px, py + 2.2 * s), max(1, round(1.8 * s)))
+            green = tint((88, 178, 76))
+            for ox, oy, r in ((-1.5, -0.6, 1.6), (1.5, -0.6, 1.6), (0, -1.9, 1.8)):
+                circle(surf, green, (px + ox * s, py + oy * s), r * s, k, ow=0.7)
+            soft_circle(surf, (255, 255, 255), (px - 0.6 * s, py - 2.4 * s), 0.6 * s, 150 * (1 - burnt))
+        elif kind == "carrot":
+            ellipse(surf, tint((244, 142, 52)), (px, py), 2.6 * s, 1.8 * s, k, ow=0.8)
+            ellipse(surf, tint((252, 186, 104)), (px, py), 1.2 * s, 0.8 * s, k, ow=0)
+        else:
+            a, b = (px - 2.4 * s, py + 0.8 * s), (px + 2.4 * s, py - 0.8 * s)
+            width = max(2, round(2.2 * s))
+            pygame.draw.line(surf, PALETTE["outline"], a, b, width + 2 * _w(k, 0.7))
+            for end in (a, b):
+                pygame.draw.circle(surf, PALETTE["outline"], end, width / 2 + _w(k, 0.7))
+            red = tint((232, 74, 66))
+            pygame.draw.line(surf, red, a, b, width)
+            for end in (a, b):
+                pygame.draw.circle(surf, red, end, width / 2)
+
+
+_FOOD = {"stirfry": _food_stirfry, "egg": _food_egg, "steak": _food_steak}
+
+
+def draw_food(surf, c, dish, cook, r, k=1.0):
+    """Dibuja el plato en perspectiva. `cook` es el nivel de cocción: cambia con él."""
+    done, burnt = _doneness(cook)
+    _FOOD[dish](surf, c, r / 10, k, done, burnt)
+
+
+def draw_gauge(surf, c, cook, visual, k):
+    """Barra de cocción: triángulo lleno = nivel real; hueco = lo que ve el agente."""
+    width, height, top = 23 * k, 4.4 * k, 1.6       # la escala llega a `top` niveles de cocción
+    rect = pygame.Rect(0, 0, width, height)
+    rect.center = c
+
+    def at(level):
+        return rect.x + rect.width * _clamp(level / top)
+
+    pygame.draw.rect(surf, PALETTE["gauge_raw"], rect)
+    pygame.draw.rect(surf, PALETTE["gauge_ok"], pygame.Rect(at(RAW_BELOW), rect.y, at(BURNT_FROM) - at(RAW_BELOW), height))
+    pygame.draw.rect(surf, PALETTE["gauge_burnt"], pygame.Rect(at(BURNT_FROM), rect.y, rect.right - at(BURNT_FROM), height))
+    pygame.draw.rect(surf, PALETTE["outline"], rect.inflate(_w(k, 1.0), _w(k, 1.0)), _w(k, 1.0),
+                     border_radius=max(1, round(1.2 * k)))
+    if visual is not None:
+        x, y = at(visual), rect.bottom + 1 * k
+        pygame.draw.polygon(surf, PALETTE["hud_bg"], [(x, y), (x - 2.6 * k, y + 4.2 * k), (x + 2.6 * k, y + 4.2 * k)])
+        pygame.draw.polygon(surf, PALETTE["outline"], [(x, y), (x - 2.6 * k, y + 4.2 * k), (x + 2.6 * k, y + 4.2 * k)],
+                            _w(k, 0.9))
+    if cook is not None:
+        x, y = at(cook), rect.top - 1 * k
+        pygame.draw.polygon(surf, PALETTE["outline"], [(x, y), (x - 3 * k, y - 4.6 * k), (x + 3 * k, y - 4.6 * k)])
 
 
 def draw_chef(surf, pos, shirt, *, lean=0.0, wiggle=0.0, face="normal", hop=0.0, k=1.0):
@@ -209,9 +467,17 @@ def draw_chef(surf, pos, shirt, *, lean=0.0, wiggle=0.0, face="normal", hop=0.0,
 
     ol = PALETTE["outline"]
     w = _w(k)
+    # Brazos, por detrás del cuerpo
+    for sx in (-1, 1):
+        rrect(img, shirt, R(sx * 11 - 3.2, -27, 6.4, 15), 3 * k, k, ow=1.2)
+        circle(img, PALETTE["skin"], P(sx * 11, -11), 3.3 * k, k, ow=1.1)
     # Cuerpo (camisa) y delantal
     rrect(img, shirt, R(-10, -30, 20, 30), 10 * k, k)
     rrect(img, PALETTE["chef_white"], R(-6.5, -16, 13, 14), 4 * k, k, ow=1.1)
+    pygame.draw.line(img, ol, P(-6, -16), P(-3.5, -27), max(1, round(k)))
+    pygame.draw.line(img, ol, P(6, -16), P(3.5, -27), max(1, round(k)))
+    # Pañuelo al cuello
+    rrect(img, PALETTE["chef_white"], R(-6, -31, 12, 4), 2 * k, k, ow=1.0)
     # Cabeza
     circle(img, PALETTE["skin"], P(0, -38), 9 * k, k)
     for sx in (-1, 1):
@@ -248,46 +514,59 @@ def draw_chef(surf, pos, shirt, *, lean=0.0, wiggle=0.0, face="normal", hop=0.0,
 
 
 def draw_lid(surf, c, k, angle=0.0, alpha=255):
-    img = layer((34 * k, 22 * k))
-    cx, cy = 17 * k, 14 * k
-    pygame.draw.ellipse(img, PALETTE["outline"], pygame.Rect(0, 0, 26 * k, 10 * k).move(4 * k, 9 * k - 5 * k).inflate(_w(k), _w(k)))
-    ellipse(img, PALETTE["metal_light"], (cx, cy), 13 * k, 5 * k, k)
-    ellipse(img, PALETTE["metal_light"], (cx, cy - 2 * k), 10 * k, 5 * k, k)
-    pygame.draw.ellipse(img, PALETTE["metal_light"], pygame.Rect(0, 0, 18 * k, 4 * k).move(cx - 9 * k, cy - 2 * k))
-    circle(img, PALETTE["outline"], (cx, cy - 7.5 * k), 2.6 * k, k, ow=0)
-    soft_ellipse(img, (255, 255, 255), (cx - 5 * k, cy - 3.5 * k), 3 * k, 1.3 * k, 160)
+    """Tapa de vidrio: deja ver la comida."""
+    img = layer((40 * k, 26 * k))
+    cx, cy = 20 * k, 17 * k
+    glass = pygame.Surface(img.get_size(), pygame.SRCALPHA)
+    pygame.draw.ellipse(glass, (*PALETTE["glass"], 92), pygame.Rect(cx - 14 * k, cy - 6 * k, 28 * k, 12 * k))
+    pygame.draw.ellipse(glass, (*PALETTE["glass"], 92), pygame.Rect(cx - 11.5 * k, cy - 9 * k, 23 * k, 12 * k))
+    img.blit(glass, (0, 0))
+    pygame.draw.arc(img, PALETTE["outline"], pygame.Rect(cx - 12 * k, cy - 9.5 * k, 24 * k, 13 * k), 0.05, math.pi - 0.05,
+                    max(1, _w(k, 1.2)))
+    pygame.draw.ellipse(img, PALETTE["outline"], pygame.Rect(cx - 14 * k, cy - 6 * k, 28 * k, 12 * k), max(1, _w(k, 1.2)))
+    soft_ellipse(img, (255, 255, 255), (cx - 6 * k, cy - 4.8 * k), 3.6 * k, 1.1 * k, 200)
+    circle(img, PALETTE["handle"], (cx, cy - 9.6 * k), 2.6 * k, k, ow=1.2)
     blit_rotated(surf, img, c, (cx, cy), angle, alpha)
 
 
-def draw_burner(surf, iso: Iso, x, *, available, lid, flame, steam, revealed_burnt, t_anim):
-    """Fuego en la fila del fondo. lid: 0 tapada ... 1 sin tapa (se dibuja aparte)."""
+def draw_burner(surf, iso: Iso, x, *, available, lid, flame, steam, revealed_burnt, t_anim,
+                dish=None, cook=0.0):
+    """Fuego con sartén en la fila del fondo. lid: 0 tapada ... 1 sin tapa."""
     k = iso.k
     cx, cy = draw_block(surf, iso, x, 0, COUNTER_HEIGHT, grey=not available)
     base = PALETTE["burner_base"] if available else (170, 160, 150)
-    ellipse(surf, base, (cx, cy), 15 * k, 7.5 * k, k)
+    ellipse(surf, base, (cx, cy), 15.5 * k, 7.6 * k, k)
+    if available:
+        ellipse(surf, (112, 104, 102), (cx, cy), 11 * k, 5.2 * k, k, ow=0.8)
     if flame > 0 and available:
         for i in (-1, 0, 1):
             fl = flame * (1 + 0.25 * math.sin(t_anim * math.tau * 4 + i * 2.1))
-            fx = cx + i * 7 * k
-            poly(surf, PALETTE["flame"], [(fx - 3.2 * k, cy + 1.5 * k), (fx, cy + 1.5 * k - 9 * fl * k),
-                                          (fx + 3.2 * k, cy + 1.5 * k)], k, ow=0.9,
+            fx = cx + i * 8 * k
+            poly(surf, PALETTE["flame"], [(fx - 3.2 * k, cy + 3.6 * k), (fx, cy + 3.6 * k - 8 * fl * k),
+                                          (fx + 3.2 * k, cy + 3.6 * k)], k, ow=0.9,
                  outline=PALETTE["flame_edge"])
-    metal = PALETTE["metal"] if available else (196, 192, 186)
-    # Olla: fondo, cuerpo y borde
-    ellipse(surf, metal, (cx, cy - 3 * k), 13 * k, 5.5 * k, k)
-    pygame.draw.rect(surf, metal, pygame.Rect(cx - 13 * k + _w(k) / 2, cy - 10 * k, 26 * k - _w(k), 7 * k))
-    pygame.draw.line(surf, PALETTE["outline"], (cx - 13 * k, cy - 10 * k), (cx - 13 * k, cy - 3 * k), _w(k))
-    pygame.draw.line(surf, PALETTE["outline"], (cx + 13 * k, cy - 10 * k), (cx + 13 * k, cy - 3 * k), _w(k))
-    rrect(surf, (107, 84, 70), pygame.Rect(cx + 12 * k, cy - 9 * k, 11 * k, 3.2 * k), 1.5 * k, k, ow=1)
-    rim = (cx, cy - 10 * k)
-    ellipse(surf, (60, 56, 56) if revealed_burnt or lid > 0 else metal, rim, 13 * k, 5.5 * k, k)
+            poly(surf, PALETTE["ember_yellow"], [(fx - 1.5 * k, cy + 3.2 * k), (fx, cy + 3.2 * k - 4 * fl * k),
+                                                 (fx + 1.5 * k, cy + 3.2 * k)], k, ow=0)
+    pan = PALETTE["pan"] if available else (196, 192, 186)
+    inner = PALETTE["pan_inner"] if available else (214, 208, 200)
+    # Sartén: cuerpo bajo, mango y fondo
+    rrect(surf, PALETTE["handle"], pygame.Rect(cx + 12 * k, cy - 6.2 * k, 12 * k, 3.4 * k), 1.5 * k, k, ow=1)
+    ellipse(surf, pan, (cx, cy - 1.5 * k), 13.5 * k, 6.2 * k, k)
+    pygame.draw.rect(surf, pan, pygame.Rect(cx - 13.5 * k + _w(k) / 2, cy - 5 * k, 27 * k - _w(k), 3.5 * k))
+    pygame.draw.line(surf, PALETTE["outline"], (cx - 13.5 * k, cy - 5 * k), (cx - 13.5 * k, cy - 1.5 * k), _w(k))
+    pygame.draw.line(surf, PALETTE["outline"], (cx + 13.5 * k, cy - 5 * k), (cx + 13.5 * k, cy - 1.5 * k), _w(k))
+    rim = (cx, cy - 5 * k)
+    ellipse(surf, pan, rim, 13.5 * k, 6.2 * k, k)
+    ellipse(surf, inner, rim, 11.2 * k, 4.9 * k, k, ow=0)
+    if dish:
+        wobble = 0.5 * k * math.sin(t_anim * math.tau * 2 + x) if available else 0.0
+        draw_food(surf, (rim[0], rim[1] - 0.8 * k + wobble), dish, cook, 10 * k, k)
     if revealed_burnt:
-        draw_blob(surf, (cx, cy - 9 * k), DISH_COLORS["burnt"], 7 * k, k)
-        burning(surf, (cx, cy - 15 * k), k, t_anim, seed=x)
+        burning(surf, (cx, cy - 11 * k), k, t_anim, seed=x)
     if lid < 1:
-        draw_lid(surf, (rim[0], rim[1] - lid * 14 * k), k, angle=lid * 25)
+        draw_lid(surf, (rim[0], rim[1] - 0.5 * k - lid * 15 * k), k, angle=lid * 25)
     if steam > 0 and available and not revealed_burnt:
-        draw_steam(surf, (cx, cy - 18 * k - lid * 14 * k), k, t_anim, steam)
+        draw_steam(surf, (cx, cy - 15 * k - lid * 14 * k), k, t_anim, steam)
     return rim
 
 
@@ -420,21 +699,28 @@ def _preview(path="results/figures/sprites_preview.png"):
     k = 2.0
     surf = pygame.Surface((int(470 * k * 1.6), int(320 * k)))
     surf.fill(PALETTE["bg"])
-    iso = Iso((300 * k, 78 * k), 50 * k, 25 * k)
+    iso = Iso((300 * k, 92 * k), 50 * k, 25 * k)
     draw_floor(surf, iso, 5)
+    draw_walls(surf, iso, 5)
     draw_block(surf, iso, 0, 0, COUNTER_HEIGHT)
     draw_block(surf, iso, 1, 0, COUNTER_HEIGHT)
-    draw_burner(surf, iso, 2, available=True, lid=0, flame=1, steam=1, revealed_burnt=False, t_anim=0.2)
-    draw_burner(surf, iso, 3, available=True, lid=1, flame=1, steam=0, revealed_burnt=True, t_anim=0.4)
+    draw_burner(surf, iso, 2, available=True, lid=0, flame=1, steam=1, revealed_burnt=False, t_anim=0.2,
+                dish="steak", cook=1.15)
+    draw_burner(surf, iso, 3, available=True, lid=1, flame=1, steam=0, revealed_burnt=True, t_anim=0.4,
+                dish="egg", cook=1.5)
     draw_burner(surf, iso, 4, available=False, lid=0, flame=0, steam=0, revealed_burnt=False, t_anim=0)
     draw_block(surf, iso, 0, 1, COUNTER_HEIGHT)
     draw_trash(surf, iso, 0.6, 0)
     for i, face in enumerate(("normal", "worried", "ponder")):
         draw_chef(surf, iso.to_screen(1.5 + i, 2.5), SHIRTS[i], face=face, k=k)
-    draw_carrier(surf, iso.to_screen(3.2, 3.8, 10), "plate", DISH_COLORS["steak"], k)
-    draw_carrier(surf, iso.to_screen(4.0, 3.2, 10), "board", DISH_COLORS["stirfry"], k)
+    draw_carrier(surf, iso.to_screen(3.2, 3.8, 10), "plate", DISH_COLORS["steak"], k, food="steak", cook=1.15)
+    draw_carrier(surf, iso.to_screen(4.0, 3.2, 10), "board", DISH_COLORS["stirfry"], k, food="stirfry")
     for i, name in enumerate(ICONS):
         draw_icon(surf, name, (520 * k + (i % 4) * 60 * k, 60 * k + (i // 4) * 60 * k), 32 * k)
+    # Cada plato crudo, en su punto y quemado
+    for row, dish in enumerate(("stirfry", "egg", "steak")):
+        for col, cook in enumerate((0.0, 0.6, 1.15, 1.55)):
+            draw_food(surf, ((30 + 44 * col) * k, (40 + 44 * row) * k), dish, cook, 18 * k, k)
     pygame.image.save(surf, path)
     print(f"Vista previa en {path}")
 

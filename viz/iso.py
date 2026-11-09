@@ -1,5 +1,7 @@
 """Proyección isométrica y ubicación de las estaciones en la cocina."""
 
+from dataclasses import dataclass
+
 # Cocina de 5 x 5 baldosas. Fila del fondo (y = 0): preparación y los 3 fuegos.
 # Columna izquierda (x = 0): basurero y ventana de entrega. El resto son mostradores.
 FLOOR = 5
@@ -23,9 +25,34 @@ STAND_TILES = {
     "center": (2.6, 2.7),
 }
 COUNTER_HEIGHT = 18
+WALL_HEIGHT = 50
 # Origen de la cocina en el lienzo del mockup (470 x 320), a la derecha de la columna de órdenes
 KITCHEN_ORIGIN = (300, 96)
 TILE = (60, 30)
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Dónde va cada cosa, en unidades de un lienzo de `design`."""
+
+    design: tuple[int, int]
+    origin: tuple[int, int]     # esquina del fondo de la cocina
+    tile: tuple[int, int]
+    cards_x: int                # columna de tarjetas de órdenes
+    cards_top: int
+    cards_bottom: int
+    columns: int                # columnas de tarjetas
+    column_step: int
+
+
+# Panel ancho: órdenes a la izquierda y cocina a la derecha
+LANDSCAPE = Layout((470, 320), KITCHEN_ORIGIN, TILE, 22, 40, 286, 1, 0)
+# Panel angosto (pantalla dividida): órdenes arriba y una cocina más grande debajo
+PORTRAIT = Layout((470, 560), (235, 258), (90, 45), 23, 36, 158, 3, 150)
+
+
+def layout_for(rect) -> Layout:
+    return PORTRAIT if rect.width / rect.height < 1.15 else LANDSCAPE
 
 
 def design_frame(rect, design=(470, 320)) -> tuple[float, float, float]:
