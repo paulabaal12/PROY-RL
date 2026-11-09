@@ -24,7 +24,7 @@ import pandas as pd
 
 import envs  # noqa: F401  (registra HellKitchen-v1)
 from agents.baselines import FifoHeuristicPolicy, RandomPolicy
-from envs.kitchen_config import PRESETS
+from envs.kitchen_config import DISHES, PRESETS
 
 TEST_BASE_SEED = 10_000        # seeds de prueba: solo para los números del reporte
 VALIDATION_BASE_SEED = 20_000  # seeds de validación: tuning y selección de N
@@ -48,6 +48,7 @@ def run_episode(env: gym.Env, policy: Policy, seed: int) -> dict:
     counts = dict.fromkeys(EVENT_TYPES, 0)
     delays = []
     avoidable_waits = prioritized = prep_ahead = 0
+    tastes_by_dish, served_by_dish = dict.fromkeys(DISHES, 0), dict.fromkeys(DISHES, 0)
     episode_return, steps = 0.0, 0
     events = info["events"]
     done = False
@@ -63,6 +64,10 @@ def run_episode(env: gym.Env, policy: Policy, seed: int) -> dict:
                 prioritized += 1
             if kind == "prepped" and event["all_busy"]:
                 prep_ahead += 1
+            if kind == "tasted":
+                tastes_by_dish[event["dish"]] += 1
+            elif kind.startswith("served_"):
+                served_by_dish[event["order"]["dish"]] += 1
         if done:
             break
         obs, reward, terminated, truncated, info = env.step(policy(obs))
@@ -85,6 +90,7 @@ def run_episode(env: gym.Env, policy: Policy, seed: int) -> dict:
         "bad_serve_rate": _ratio(bad, served),
         "mean_delay": np.mean(delays) if delays else np.nan,
         "tastes_per_order": _ratio(counts["tasted"], served),
+        **{f"tastes_per_order_{dish}": _ratio(tastes_by_dish[dish], served_by_dish[dish]) for dish in DISHES},
         "idle_rate": _ratio(counts["waited"] + counts["invalid"], steps),
         "avoidable_idle_rate": _ratio(avoidable_waits, steps),
         "prioritization_rate": _ratio(prioritized, counts["prepped"] + counts["placed"]),

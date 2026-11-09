@@ -271,7 +271,7 @@ class KitchenEnv(gym.Env):
             st.last_taste = st.cook + taste_noise
             st.has_tasted = True
             st.steps_since_taste = 0
-            events.append({"type": "tasted", "station": taste_station,
+            events.append({"type": "tasted", "station": taste_station, "dish": DISHES[st.order.dish],
                            "result": st.last_taste, "cook": st.cook})
 
         # 3. Tiempo: todas las órdenes envejecen un paso. Las que pasan su hora de
