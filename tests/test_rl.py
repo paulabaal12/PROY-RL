@@ -14,7 +14,7 @@ from agents.rl import (
     valid_action_mask,
 )
 from envs.kitchen_env import OP_DISCARD, OP_SERVE, OP_TASTE, ST_OCCUPIED, ST_VISUAL, KitchenEnv
-from experiments import analyze, export_replays
+from experiments import analyze, export_replays, report_assets
 from experiments.evaluate import evaluate
 from experiments.run_experiments import final_evaluation
 from experiments.train import load_config, train_run
@@ -196,4 +196,7 @@ def test_full_pipeline_from_runs(tmp_path, monkeypatch):
         assert (tables / f"{name}.csv").exists() and (tables / f"{name}.md").exists()
     for name in ("training_curves", "training_internals", "performance_vs_n", "behavior_vs_n", "robustness"):
         assert (figures / f"{name}.png").exists()
+    comparison = report_assets.build(runs, tables, figures, tmp_path / "docs", eval_episodes=1)
+    assert len(comparison) == 4 and (comparison["largo_episodio"] == 200).all()
+    assert (tables / "comparison.md").exists() and (tmp_path / "docs" / "dqn_vs_ppo_reward.png").exists()
     torch.use_deterministic_algorithms(False)

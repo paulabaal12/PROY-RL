@@ -244,20 +244,22 @@ def plot_training_curves(curves: pd.DataFrame, fifo_return: float, figures_dir: 
 
 def plot_training_internals(progress: pd.DataFrame, figures_dir: Path, window: int = DEFAULT_WINDOW):
     """Curvas propias de cada algoritmo: loss y epsilon en DQN; pérdidas, entropía y KL en PPO."""
-    panels = [("dqn", "train/loss", "DQN: loss"),
-              ("dqn", "rollout/exploration_rate", "DQN: epsilon"),
-              ("ppo", "train/policy_gradient_loss", "PPO: policy loss"),
-              ("ppo", "train/value_loss", "PPO: value loss"),
-              ("ppo", "train/entropy_loss", "PPO: entropía (loss)"),
-              ("ppo", "train/approx_kl", "PPO: KL aproximada")]
-    fig, axes = plt.subplots(2, 3, figsize=(11, 5.5))
+    panels = [("dqn", "train/loss", "DQN: loss", "loss"),
+              ("dqn", "rollout/exploration_rate", "DQN: epsilon", "epsilon"),
+              ("ppo", "train/policy_gradient_loss", "PPO: policy loss", "policy loss"),
+              ("ppo", "train/value_loss", "PPO: value loss", "value loss"),
+              ("ppo", "train/entropy_loss", "PPO: entropía (loss)", "entropy loss"),
+              ("ppo", "train/approx_kl", "PPO: KL aproximada", "KL aproximada")]
+    fig, axes = plt.subplots(2, 3, figsize=(11, 6))
     sub = progress[progress["window"] == window]
-    for ax, (algo, col, title) in zip(axes.flat, panels):
+    for ax, (algo, col, title, label) in zip(axes.flat, panels):
         data = sub[sub["algo"] == algo].dropna(subset=[col, "time/total_timesteps"])
         bins = (data["time/total_timesteps"] // 25_000) * 25_000
         means = data.groupby(bins)[col].mean()
-        ax.plot(means.index / 1e6, means.to_numpy(), color=ALGO_COLOR[algo], linewidth=2)
-        _style(ax, title, "millones de pasos", "")
+        ax.plot(means.index / 1e6, means.to_numpy(), color=ALGO_COLOR[algo], linewidth=2,
+                label=f"{ALGO_LABEL[algo]}, N = {window}, media de seeds")
+        _style(ax, title, "millones de pasos", label)
+        ax.legend(frameon=False, labelcolor=TEXT, fontsize=8)
     _finish(fig, "training_internals", figures_dir)
 
 
@@ -328,10 +330,12 @@ def plot_robustness(robust: pd.DataFrame, figures_dir: Path):
         for j in range(values.shape[1]):
             ax.text(j, i, f"{values[i, j]:.0f}", ha="center", va="center", color=TEXT, fontsize=9)
     ax.set_title("Retorno por escenario (prueba)", color=TEXT, fontsize=11, loc="left")
+    ax.set_xlabel("escenario de evaluación", color=TEXT_SECONDARY)
+    ax.set_ylabel("política", color=TEXT_SECONDARY)
     colorbar = fig.colorbar(image, ax=ax, fraction=0.025, pad=0.02)
+    colorbar.set_label("retorno por episodio", color=TEXT_SECONDARY)
     colorbar.outline.set_visible(False)
     colorbar.ax.tick_params(colors=TEXT_SECONDARY, length=0)
-    fig.gca()
     _finish(fig, "robustness", figures_dir)
 
 

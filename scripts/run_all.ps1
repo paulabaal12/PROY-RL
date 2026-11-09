@@ -36,6 +36,7 @@ if (-not $OnlyAnalysis) {
 }
 
 Invoke-Step "Analisis: tablas y figuras" @("-m", "experiments.analyze")
+Invoke-Step "Tabla y figuras del informe" @("-m", "experiments.report_assets")
 Invoke-Step "Replays" @("-m", "experiments.export_replays")
 
 Write-Host ""
