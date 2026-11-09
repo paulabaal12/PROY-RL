@@ -1,0 +1,29 @@
+algo: ppo
+window: 2
+seed: 0
+kitchen: random
+total_timesteps: 1000000
+eval_every: 25000
+eval_episodes: 30
+reward_scale: 0.1
+gamma: 0.99
+net_arch:
+- 256
+- 256
+shaping:
+  prep: 1.0
+  placed: 1.0
+  cook: 2.0
+action_mask: true
+n_envs: 8
+log_interval: 1
+hyperparameters:
+  learning_rate: 0.0003
+  n_steps: 256
+  batch_size: 256
+  n_epochs: 10
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.05
+  vf_coef: 0.5
+  max_grad_norm: 0.5

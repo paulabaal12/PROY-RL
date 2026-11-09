@@ -1,0 +1,9 @@
+algo,config,overrides,validation_return,chosen
+dqn,0,base,29.285999999999966,False
+dqn,1,{'learning_rate': 0.0003},-30.04000000000002,False
+dqn,2,"{'target_update_interval': 1000, 'train_freq': 2}",18.79099999999996,False
+dqn,3,{'exploration_steps': 120000},43.65599999999995,True
+ppo,0,base,-56.29750000000001,False
+ppo,1,{'learning_rate': 0.0001},-152.7735,False
+ppo,2,{'ent_coef': 0.08},-77.33999999999999,False
+ppo,3,{'n_epochs': 10},-13.775000000000022,True
