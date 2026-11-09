@@ -1,0 +1,19 @@
+# PPO: configuración base. La red, gamma, el shaping y el masking son iguales a los de DQN.
+reward_scale: 0.1          # recompensas de +-10 pasan a +-1
+gamma: 0.99                # horizonte efectivo de ~100 pasos (env_design.md, sección 3.9)
+net_arch: [256, 256]       # una red para la política y otra para el valor, ambas de este tamaño
+shaping: {prep: 1.0, placed: 1.0, cook: 2.0}   # ver PotentialShaping en agents/rl.py
+action_mask: true          # ver valid_action_mask en agents/rl.py
+n_envs: 8
+log_interval: 1            # iteraciones entre escrituras de progress.csv
+
+hyperparameters:
+  learning_rate: 3.0e-4
+  n_steps: 256             # por ambiente: 2048 pasos por iteración
+  batch_size: 256
+  n_epochs: 5
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.05           # con menos exploración, en los pilotos casi nunca aprendió a servir
+  vf_coef: 0.5
+  max_grad_norm: 0.5

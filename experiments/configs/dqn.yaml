@@ -1,0 +1,20 @@
+# DQN: configuración base. La red, gamma, el shaping y el masking son iguales a los de PPO.
+reward_scale: 0.1          # recompensas de +-10 pasan a +-1
+gamma: 0.99                # horizonte efectivo de ~100 pasos (env_design.md, sección 3.9)
+net_arch: [256, 256]
+shaping: {prep: 1.0, placed: 1.0, cook: 2.0}   # ver PotentialShaping en agents/rl.py
+action_mask: true          # ver valid_action_mask en agents/rl.py
+n_envs: 1
+log_interval: 20           # episodios entre escrituras de progress.csv
+
+hyperparameters:
+  learning_rate: 1.0e-4
+  buffer_size: 100000      # 500 episodios; acotado para que quepa en RAM con 4 corridas a la vez
+  learning_starts: 5000
+  batch_size: 64
+  train_freq: 4
+  gradient_steps: 1
+  target_update_interval: 2000
+  exploration_steps: 200000   # pasos en que epsilon baja de 1 a su valor final
+  exploration_final_eps: 0.05
+  max_grad_norm: 10.0

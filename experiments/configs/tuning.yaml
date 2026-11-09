@@ -1,0 +1,13 @@
+# Tuning acotado (env_design.md, sección 4.4): una sola vez, con el N por defecto y el
+# mismo número de configuraciones por algoritmo. Cada entrada sobreescribe claves de
+# `hyperparameters` en la configuración base; {} es la base.
+dqn:
+  - {}
+  - {learning_rate: 3.0e-4}
+  - {target_update_interval: 1000, train_freq: 2}
+  - {exploration_steps: 120000}
+ppo:
+  - {}
+  - {learning_rate: 1.0e-4}
+  - {ent_coef: 0.08}
+  - {n_epochs: 10}
