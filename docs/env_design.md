@@ -114,7 +114,7 @@ Todos los valores son **(propuesta)**, a calibrar en el Paso 0.
 
 - **`place_i` no elige estación.** Las estaciones son idénticas, así que elegir cuál solo agregaría acciones equivalentes. La observación de cada estación dice qué plato y qué orden tiene.
 - **`serve_k` funciona en cualquier estación**: si un plato de una orden más reciente está listo, se puede servir aunque otras esperen.
-- **Acciones inválidas** (incluidas las que apuntan a estaciones inexistentes cuando K < 3) se ejecutan como `wait` con −0.1. No se usa action masking, porque DQN en stable-baselines3 no lo soporta y dárselo solo a PPO haría injusta la comparación.
+- **Acciones inválidas** (incluidas las que apuntan a estaciones inexistentes cuando K < 3) se ejecutan como `wait` con −0.1. El ambiente sigue aceptándolas, pero los agentes entrenan con **action masking** en DQN y PPO por igual (sección 10): la máscara se calcula solo con la observación y, además, no permite servir ni descartar con una lectura visual menor a 0.6.
 
 ### 3.5 Recompensas R
 
@@ -231,10 +231,10 @@ Evaluarlos cuesta segundos. Además, la comparación **agente con N = 1 vs. heur
 ### 4.4 Agentes
 
 - **DQN** (off-policy) y **PPO** (on-policy), con la misma red MLP y el mismo preprocesamiento.
-- La decisión **desde cero en PyTorch vs. stable-baselines3** se toma al inicio de T4 y aplica a ambos (pendiente).
+- Implementación con **stable-baselines3** en ambos (sección 10), más **shaping por potencial y action masking** idénticos para los dos (`agents/rl.py`).
 - **Bootstrap en truncamiento** en ambos (sección 3.9).
 - **Tuning:** una sola vez, con el N por defecto, con el mismo número de configuraciones para cada algoritmo, evaluando en las seeds de validación. Los hiperparámetros elegidos se reutilizan para todos los N.
-- **Presupuesto de entrenamiento:** el mismo número de pasos de ambiente para todas las corridas. Se fija después de una corrida piloto que mida el tiempo por corrida **(pendiente)**.
+- **Presupuesto de entrenamiento:** el mismo número de pasos de ambiente para todas las corridas: 1 000 000 (400 000 en el tuning), fijado tras las corridas piloto.
 
 ### 4.5 Diseño experimental
 
@@ -350,7 +350,6 @@ Son expectativas razonables que los resultados deben poner a prueba, no conclusi
 
 - **Frame stacking y redes recurrentes:** la observación ya trae la memoria necesaria (última prueba, pasos desde la prueba, tiempo cocinando). Medir si memoria adicional ayuda es una pregunta lateral a DQN vs. PPO.
 - **Lavar platos, traer ingredientes y otros recursos separados:** la preparación ya representa el trabajo que no es cocinar. Un recurso extra complicaría el análisis.
-- **Action masking:** no se usa, para no favorecer a PPO.
 - **Recetas de varios pasos, varios chefs, clientes con paciencia variable.**
 
 ---
@@ -361,3 +360,14 @@ Son expectativas razonables que los resultados deben poner a prueba, no conclusi
 |---|---|---|---|
 | 2026-10-23 | (v1) | Sin cambios | La calibración de v1 cumplió el criterio: heurística 142.3 ± 31.4 vs. aleatoria −88.7 ± 14.7; 78.5 % a tiempo |
 | 2026-10-30 | Diseño completo | v1 → v2 | Preparación, 3 platos, entrega ≠ expiración, ventana visible, randomización de dominio (este documento) |
+| 2026-11-08 | Costo de probar | 0.2 → 0.2 (confirmado) | La mejor frecuencia de prueba nunca quedó en medio, para ningún costo entre 0 y 1. Probar sí es una decisión real porque lo conveniente se invierte con σ_obs: no probar es mejor a 0.05 (89.8 vs. 68.9) y probar en cada paso es mucho mejor a 0.25 (16.2 vs. −116.7) |
+| 2026-11-08 | Rango de σ_obs | [0.05, 0.25] (confirmado) | Los extremos se comportan de forma opuesta |
+| 2026-11-08 | N por defecto | Por definir → 6 | El cuantil 0.9 da 7, pero N = 6 cubre el 89.2 %: no justifica 10 corridas más |
+| 2026-11-08 | Heurística de verificación (criterio 4) | EDF → EDF y triage | La EDF no supera a la FIFO (−7.8 [−19.5, 3.5] en randomizado). La triage, que ignora órdenes imposibles, sí (+69.8 [50.9, 89.1]) |
+| 2026-11-08 | K = 1 | Por validar → validado | La FIFO aún entrega 21.2 % a tiempo y supera a la aleatoria |
+| 2026-11-08 | Implementación | Pendiente → stable-baselines3 | Ambos algoritmos comparten implementación probada, con bootstrap en truncamiento, y hay menos código propio que defender |
+| 2026-11-08 | Entrenamiento: shaping | Sin shaping → shaping por potencial (Ng et al., 1999) | Sin él ningún agente aprendió. No cambia la política óptima y solo se aplica al entrenar; la evaluación usa la recompensa original |
+| 2026-11-08 | Acciones: masking | Sin masking → masking en DQN y PPO | Se invierte la decisión de la sección 3.4: con acciones inválidas PPO nunca completó un plato. La objeción era dárselo a uno solo; se aplica igual a los dos y se calcula solo con la observación |
+| 2026-11-08 | Acciones: compuerta visual | Sin compuerta → servir y descartar requieren lectura visual ≥ 0.6 | En exploración los platos se servían o botaban antes de cocinarse, y nunca se descubría que servir a tiempo paga. Pilotos a 400 000 pasos, N = 4: DQN de −88.4 a un retorno de +7.1 con 49.9 % a tiempo; PPO de 0 % a 30 % a tiempo |
+| 2026-11-08 | Presupuesto | Por definir → 1 000 000 de pasos por corrida (tuning: 400 000) | Corrida piloto: PPO aún mejoraba a los 400 000 pasos |
+| 2026-11-09 | Hiperparámetros (tuning) | DQN: `exploration_steps` 200 000 → 120 000. PPO: `n_epochs` 5 → 10 | Mejor retorno en validación entre 4 configuraciones por algoritmo, con 2 seeds: DQN 43.7 (base 29.3), PPO −13.8 (base −56.3). Ver `results/tables/tuning.md` |

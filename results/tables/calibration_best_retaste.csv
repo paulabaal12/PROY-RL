@@ -1,0 +1,16 @@
+taste_cost,sigma_obs,best_retaste,best_return,interior
+0.0,0.05,nunca,89.775,False
+0.1,0.05,nunca,89.775,False
+0.2,0.05,nunca,89.775,False
+0.5,0.05,nunca,89.775,False
+1.0,0.05,nunca,89.775,False
+0.0,0.15,1,42.045,False
+0.1,0.15,1,39.063,False
+0.2,0.15,1,36.080999999999996,False
+0.5,0.15,1,27.135,False
+1.0,0.15,1,12.225,False
+0.0,0.25,1,22.96,False
+0.1,0.25,1,19.573999999999998,False
+0.2,0.25,1,16.188,False
+0.5,0.25,1,6.03,False
+1.0,0.25,1,-10.9,False
